@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.3.2"
+VERSION = "0.4.1"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -127,8 +127,14 @@ class CEC:
         if phys and phys != "f.f.f.f":
             self._c("--active-source", f"phys-addr={phys}")
 
+    def current_source(self):
+        """Demande sur le bus HDMI quelle entrée est active (avant d'afficher les photos)."""
+        out = self._c("--request-active-source", "--monitor-time", "2", timeout=8)
+        found = re.findall(r"ACTIVE_SOURCE.*?phys-addr:\s*([0-9a-f.]+)", out, re.S | re.I)
+        return found[-1] if found else "0.0.0.0"  # personne ne répond : la TV était sur son propre tuner
+
     def give_back(self, phys, target=None):
-        if target:
+        if target and target != "0.0.0.0":
             self._c("--set-stream-path", f"phys-addr={target}")
         elif phys:
             self._c("--inactive-source", f"phys-addr={phys}")
@@ -616,6 +622,7 @@ class Agent:
         self.hdmi = {"cec": False, "phys": None, "devices": []}
         self.wifi_nets = []; self.setup_mode = False; self.portal = None
         self.slide_until = 0
+        self.prev_source = None
         self.photos_dir = DATA / "photos"
         self.st.setdefault("slideshow", {"seconds": 8, "shuffle": True, "minutes": 30})
         self.mq_ok = False
@@ -710,8 +717,9 @@ class Agent:
         return False
 
     async def channel(self, n):
+        log.info("chaîne %s", n)
         for ch in str(int(n)):
-            await self.tv.press(ch); await asyncio.sleep(0.35)
+            await self.tv.press(ch); await asyncio.sleep(0.5)
         if self.tv.kind == "samsung":
             await asyncio.sleep(0.3); await self.tv.press("ok")
         self.st["last_channel"] = int(n); self.save(); self.changed()
@@ -727,6 +735,8 @@ class Agent:
         await asyncio.sleep(8)
         for k in REPAIR_EXIT[self.tv.kind]:
             await self.tv.press(k); await asyncio.sleep(1.2)
+        log.info("réparation : chaîne favorite %s", s.get("fav_channel", 1))
+        self.event(type="repair", step="channel", channel=s.get("fav_channel", 1))
         await self.channel(s.get("fav_channel", 1))
         await asyncio.sleep(2)
         level = int(s.get("volume", s.get("volume_steps", 15)))
@@ -779,6 +789,8 @@ class Agent:
                 await self.photo_add(cmd["data"])
             elif a == "photo_del":
                 self.photo_del(cmd["id"])
+            elif a == "settings_slideshow":
+                self.st["slideshow"].update({k: cmd[k] for k in ("seconds", "shuffle", "minutes") if k in cmd}); self.save()
             elif a == "slideshow_start":
                 await self.slideshow_start(cmd)
             elif a in ("slideshow_stop", "tv_release"):
@@ -796,7 +808,8 @@ class Agent:
                 self.watch_until = time.time() + int(cmd.get("watch", 0))
                 await self.screen_capture()
             elif a == "settings":
-                self.st["settings"].update({k: v for k, v in cmd.items() if k in ("fav_channel", "volume_steps", "volume", "favorites")})
+                log.info("réglages : %s", {k: v for k, v in cmd.items() if k not in ("k", "cid")})
+                self.st["settings"].update({k: v for k, v in cmd.items() if k in ("fav_channel", "volume_steps", "volume", "favorites", "off_time", "on_time")})
                 self.save(); self.changed()
             elif not self.tv:
                 raise RuntimeError("Aucune TV associée")
@@ -901,14 +914,31 @@ class Agent:
         if self.cec.available() and not self.hdmi["phys"]:
             await self.hdmi_refresh()
         if self.cec.available():
+            if not self.display.running():  # retenir ce que regardait la TV, pour y revenir ensuite
+                try:
+                    prev = await asyncio.to_thread(self.cec.current_source)
+                    if prev != self.hdmi["phys"]:
+                        self.prev_source = prev
+                except Exception as e:
+                    log.info("source active inconnue: %s", e)
             await asyncio.to_thread(self.cec.show_me, self.hdmi["phys"])
         if path_or_none:
             self.display.image(path_or_none, what)
 
     async def tv_release(self):
         self.display.stop(); self.slide_until = 0
+        target = self.prev_source if self.prev_source not in (None, self.hdmi.get("phys")) else None
+        if target in (None, "0.0.0.0") and self.st.get("box_phys"):
+            target = self.st["box_phys"]
+        log.info("retour TV : source %s", target or "tuner")
         if self.cec.available():
-            await asyncio.to_thread(self.cec.give_back, self.hdmi["phys"], self.st.get("box_phys"))
+            await asyncio.to_thread(self.cec.give_back, self.hdmi["phys"], target)
+        if target in (None, "0.0.0.0") and self.tv and self.tv.kind == "samsung":
+            try:
+                await self.tv.press("tv")  # Samsung : revenir sur la TV (tuner) par le réseau
+            except Exception as e:
+                log.info("retour TV Samsung: %s", e)
+        self.prev_source = None
         self.changed()
 
     def app_link(self):
@@ -972,6 +1002,26 @@ class Agent:
         mins = int(s.get("minutes") or 0)
         self.slide_until = time.time() + mins * 60 if mins else 0
         self.changed()
+
+    async def scheduler(self):
+        """Programmation quotidienne : extinction (et rallumage) de la TV à heure fixe."""
+        done = {}
+        while True:
+            await asyncio.sleep(20)
+            try:
+                now = time.localtime(); hm = time.strftime("%H:%M", now); day = time.strftime("%Y-%m-%d", now)
+                s = self.st["settings"]
+                for key, on in (("off_time", False), ("on_time", True)):
+                    t = s.get(key)
+                    if t and t == hm and done.get(key) != day and self.tv:
+                        done[key] = day
+                        log.info("programmation : %s la TV (%s)", "allumer" if on else "éteindre", t)
+                        if not on and self.display.running():
+                            self.display.stop()
+                        await self.tv.power(on)
+                        self.event(type="schedule", action="on" if on else "off", time=t)
+            except Exception as e:
+                log.warning("programmation: %s", e)
 
     async def slideshow_guard(self):
         while True:
@@ -1084,6 +1134,7 @@ class Agent:
         self.mqtt_start()
         asyncio.create_task(self.state_publisher())
         asyncio.create_task(self.slideshow_guard())
+        asyncio.create_task(self.scheduler())
         asyncio.create_task(self.net_watch())
         async def hdmi_boot():
             await asyncio.sleep(20)

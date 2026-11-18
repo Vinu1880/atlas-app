@@ -4,76 +4,167 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="ATLAS TV">
-<meta name="theme-color" content="#0f3b4c">
+<meta name="theme-color" content="#f4f6f8">
 <title>ATLAS TV</title>
 <style>
-:root{--bg:#f3f6f8;--card:#fff;--ink:#14212b;--mute:#61717d;--acc:#1f6f8b;--acc2:#0f3b4c;--ok:#1e8e5a;--bad:#c0392b;--line:#dde5ea;--key:#eef3f6}
-@media (prefers-color-scheme:dark){:root{--bg:#0d1419;--card:#16212a;--ink:#e8eef2;--mute:#94a6b3;--acc:#4fb3d4;--acc2:#bfe6f3;--line:#24333e;--key:#1e2c37}}
+:root{
+  --btn:linear-gradient(180deg,#ffffff,#f1f4f7);--btn-line:#e2e8ed;--btn-hi:rgba(255,255,255,.9);
+  --bg:#f4f6f8;--card:#ffffff;--ink:#121c24;--mute:#66737e;--line:#e3e8ec;--key:#eef2f5;--key2:#e4eaee;
+  --acc:#17708f;--acc-ink:#ffffff;--acc-soft:#e3f1f6;--ok:#1d8a57;--ok-soft:#e2f4ea;--warn:#a86a00;--warn-soft:#fff3d6;--bad:#c23b2e;--bad-soft:#fde8e5;
+  --r:18px;--shadow:0 1px 2px rgba(16,30,40,.05),0 4px 16px rgba(16,30,40,.04)
+}
+@media (prefers-color-scheme:dark){:root{
+  --btn:linear-gradient(180deg,#22303a,#1b262e);--btn-line:#2a3843;--btn-hi:rgba(255,255,255,.05);
+  --bg:#0c1217;--card:#151e25;--ink:#e9eff3;--mute:#93a3af;--line:#222e37;--key:#1d2830;--key2:#24313a;
+  --acc:#3fb0d6;--acc-ink:#062330;--acc-soft:#123241;--ok:#41c486;--ok-soft:#123326;--warn:#f0b54a;--warn-soft:#3a2d12;--bad:#ff7b6e;--bad-soft:#3d1c19;--shadow:none}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom))}
-header{display:flex;align-items:center;justify-content:space-between;padding:14px 2px}
-h1{font-size:22px;margin:0;letter-spacing:.5px}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}
-.dot.on{background:var(--ok)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
-.status{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font-size:14px}
-.status b{display:block;font-size:17px}
-.mute{color:var(--mute);font-size:13px}
-button{font:inherit;border:0;border-radius:14px;background:var(--key);color:var(--ink);padding:14px 8px;min-height:56px;font-weight:600;cursor:pointer;width:100%}
-button:active{transform:scale(.97);filter:brightness(.92)}
-button.primary{background:var(--acc);color:#fff}
-button.big{font-size:21px;min-height:76px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff}
-.grid{display:grid;gap:10px}
-.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
-.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:300px;margin:0 auto}
-.pad .ok{border-radius:50%;aspect-ratio:1;background:var(--acc);color:#fff}
-.lbl{font-size:12px;color:var(--mute);text-align:center;margin:-4px 0 4px}
-input{font:inherit;width:100%;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-.row{display:flex;gap:10px;align-items:center}
-.list button{text-align:left;padding:14px 16px;margin-bottom:8px}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;
+  padding:0 16px calc(96px + env(safe-area-inset-bottom))}
 .hide{display:none!important}
-#toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:14px 16px;border-radius:14px;opacity:0;transition:.25s;pointer-events:none;text-align:center}
-#toast.show{opacity:.95}
-h2{font-size:17px;margin:0 0 12px}
-details summary{cursor:pointer;color:var(--mute);font-size:14px;padding:4px 0}
+/* en-tête */
+header{position:sticky;top:0;z-index:5;margin:0 -16px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);
+  display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;flex-direction:column;min-width:0}
+.brand b{font-size:20px;letter-spacing:.2px}
+.brand span{font-size:13px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:6px 10px;border-radius:999px;background:var(--bad-soft);color:var(--bad);white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.on{background:var(--ok-soft);color:var(--ok)}
+/* cartes et sections repliables */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0;box-shadow:var(--shadow)}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);margin:12px 0;box-shadow:var(--shadow);overflow:hidden}
+.sec-h{all:unset;position:relative;overflow:hidden;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:15px 16px;cursor:pointer;font-weight:650;font-size:16px}
+.sec-h .ic{width:30px;height:30px;border-radius:9px;background:var(--acc-soft);color:var(--acc);display:grid;place-items:center;flex:none}
+.sec-h .ic svg{width:18px;height:18px}
+.sec-h .sub{margin-left:auto;font-weight:500;font-size:13px;color:var(--mute)}
+.sec-h .chev{width:18px;height:18px;color:var(--mute);transition:transform .25s;flex:none;margin-left:auto}
+.sec-h .sub+.chev{margin-left:8px}
+.sec.closed .chev{transform:rotate(-90deg)}
+.sec-b{padding:0 16px 16px}
+.sec.closed .sec-b{display:none}
+/* boutons */
+button{font:inherit;border:1px solid var(--btn-line);border-radius:16px;background:var(--btn);color:var(--ink);padding:12px 10px;min-height:54px;font-weight:600;cursor:pointer;width:100%;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden;isolation:isolate;
+  box-shadow:0 1px 0 var(--btn-hi) inset,0 1px 2px rgba(16,30,40,.06),0 2px 6px rgba(16,30,40,.04);
+  transition:transform .12s cubic-bezier(.3,.7,.4,1.4),box-shadow .15s,background .15s,filter .15s;user-select:none;-webkit-user-select:none}
+button:active,button.pressed{transform:scale(.95);box-shadow:0 0 0 var(--btn-hi) inset,0 0 1px rgba(16,30,40,.1);filter:brightness(.96)}
+button .rip{position:absolute;border-radius:50%;background:currentColor;opacity:.22;transform:scale(0);pointer-events:none;animation:rip .55s ease-out forwards;z-index:-1}
+@keyframes rip{to{transform:scale(1);opacity:0}}
+button.primary{background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 88%,#fff),var(--acc));color:var(--acc-ink);border-color:transparent;
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 4px 12px color-mix(in srgb,var(--acc) 28%,transparent)}
+button.ghost{background:transparent;border:1px solid var(--line)}
+button.danger{background:var(--bad-soft);color:var(--bad);border-color:transparent;box-shadow:none}
+button:disabled{opacity:.45;pointer-events:none}
+button svg{width:20px;height:20px;flex:none}
+.grid{display:grid;gap:10px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.lbl{font-size:12px;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.6px;margin:4px 2px 2px}
+.mute{color:var(--mute);font-size:14px}
+/* statut TV */
+.status{display:flex;align-items:center;gap:14px}
+.tvic{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;background:var(--key);color:var(--mute);flex:none}
+.tvic svg{width:28px;height:28px}
+.tvic.on{background:var(--ok-soft);color:var(--ok)}
+.status .t1{font-weight:700;font-size:18px}
+.status .t2{color:var(--mute);font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{font-size:13px;padding:6px 10px;border-radius:10px;background:var(--key);color:var(--ink)}
+.chip.warn{background:var(--warn-soft);color:var(--warn);font-weight:600}
+.vol{height:6px;border-radius:3px;background:var(--key);margin-top:12px;overflow:hidden}.vol i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .3s}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.repair{border:0;min-height:72px;font-size:19px;border-radius:18px;background:linear-gradient(135deg,var(--acc),color-mix(in srgb,var(--acc) 60%,#0a2430));color:#fff;box-shadow:0 6px 20px color-mix(in srgb,var(--acc) 30%,transparent)}
+.repair small{display:block;font-weight:500;font-size:12px;opacity:.85}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:280px;margin:4px auto 12px}
+.pad .ok{border-radius:50%;aspect-ratio:1;background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 85%,#fff),var(--acc));color:var(--acc-ink);font-size:18px;border-color:transparent}
+.pad button:not(.ok){border-radius:14px}
 .favs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.spin{display:inline-block;width:18px;height:18px;border:3px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px;margin-right:8px}
+.favs button{flex-direction:column;gap:0;min-height:58px}.favs small{font-weight:500;color:var(--mute);font-size:12px}
+input,select{font:inherit;width:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);-webkit-appearance:none;appearance:none}
+input[type=time]{min-height:50px}
+.row{display:flex;gap:10px;align-items:center}.row>button{width:auto;padding:12px 20px;flex:none}
+label.f{display:block;font-size:14px;color:var(--mute);margin-bottom:12px}label.f input,label.f select{margin-top:6px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0 12px}
+.switch input{width:52px;height:32px;border-radius:16px;background:var(--key2);border:0;position:relative;padding:0;flex:none;transition:background .2s}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s}
+.switch input:checked{background:var(--ok)}.switch input:checked::after{left:23px}
+hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+/* bannières, progression, animations */
+.banner{display:flex;gap:12px;align-items:center;padding:13px 14px;border-radius:14px;margin:12px 0 0;font-weight:600;font-size:15px;background:var(--acc-soft);color:var(--acc)}
+.banner.wait{background:var(--warn-soft);color:var(--warn)}.banner.good{background:var(--ok-soft);color:var(--ok)}.banner.err{background:var(--bad-soft);color:var(--bad)}
+.banner .ico{font-size:26px;line-height:1}.pulse .ico{animation:pl 1.1s ease-in-out infinite}@keyframes pl{50%{transform:scale(1.25)}}
+.spin{display:inline-block;width:18px;height:18px;border:2.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
-.banner{display:flex;gap:12px;align-items:center;padding:14px 16px;border-radius:14px;margin:12px 0;font-weight:600;background:#e7f3f8;color:#0f3b4c}
-.banner.wait{background:#fff4d6;color:#5a4300}.banner.good{background:#e3f5ea;color:#145c3a}.banner.err{background:#fde8e6;color:#8a2117}
-.banner .ico{font-size:30px;line-height:1}
-.pulse .ico{animation:pl 1.1s ease-in-out infinite}@keyframes pl{50%{transform:scale(1.25)}}
-button.busy{opacity:.85;pointer-events:none}
-button.chosen{outline:3px solid var(--acc)}
-button.flash-ok{background:var(--ok)!important;color:#fff!important;transition:background .1s}
-button.flash-err{background:var(--bad)!important;color:#fff!important}
-.progress{height:4px;border-radius:2px;background:var(--line);overflow:hidden;margin-top:10px}
-.progress i{display:block;height:100%;width:40%;background:var(--acc);animation:pr 1.2s ease-in-out infinite}
-@keyframes pr{0%{margin-left:-40%}100%{margin-left:100%}}
+button.busy{opacity:.85;pointer-events:none}button.chosen{box-shadow:0 0 0 3px var(--acc) inset}
+button.flash-ok{background:var(--ok)!important;color:#fff!important}button.flash-err{background:var(--bad)!important;color:#fff!important}
+.progress{height:4px;border-radius:2px;background:var(--key);overflow:hidden;margin-top:10px}
+.progress i{display:block;height:100%;width:40%;background:var(--acc);animation:pr 1.2s ease-in-out infinite}@keyframes pr{0%{margin-left:-40%}100%{margin-left:100%}}
+/* photos */
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.thumbs div{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--key)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.thumbs button{border:0;box-shadow:none;position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:0;padding:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:13px}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--ok);font-weight:650}.live i{width:8px;height:8px;border-radius:50%;background:currentColor;animation:bl 1.4s infinite}@keyframes bl{50%{opacity:.3}}
+/* écran */
 .shot{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:16/9;margin-bottom:10px}
 .shot img{width:100%;height:100%;object-fit:contain;display:block}
 .shot .age{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px}
 .shot .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ab;font-size:14px;text-align:center;padding:12px}
 .focus{font-weight:700;font-size:17px;margin:2px 0 4px}
-button.on{background:var(--acc);color:#fff}
-ol{padding-left:20px;margin:8px 0}
-.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
-.thumbs div{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--key)}
-.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
-.thumbs button{position:absolute;top:4px;right:4px;width:28px;height:28px;min-height:0;padding:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px}
-select{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-.chk{display:flex;gap:10px;align-items:center;margin:10px 0}.chk input{width:22px;height:22px}
+button.on{background:var(--acc);color:var(--acc-ink)}
+ol{padding-left:20px;margin:8px 0;color:var(--mute);font-size:14px}ol li{margin:4px 0}
+.list button{justify-content:flex-start;text-align:left;flex-direction:column;align-items:flex-start;gap:2px;padding:14px 16px;margin-bottom:8px}
+.list small{font-weight:500;color:var(--mute)}
+/* barre d'onglets */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(var(--n,4),1fr);
+  padding:6px 8px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--card) 92%,transparent);
+  backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-top:1px solid var(--line)}
+nav button{background:none;border:0;box-shadow:none;flex-direction:column;gap:3px;min-height:54px;font-size:11px;font-weight:600;color:var(--mute);border-radius:12px;padding:6px 2px}
+nav button svg{width:24px;height:24px}
+nav button.act{color:var(--acc)}
+nav button:active{background:var(--key)}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:7;background:var(--ink);color:var(--bg);padding:13px 16px;border-radius:14px;
+  opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;text-align:center;font-size:15px;font-weight:500}
+#toast.show{opacity:.96;transform:none}
+h2{font-size:18px;margin:0 0 10px}
 </style>
 </head>
 <body>
-<header><h1>ATLAS TV</h1><span id="conn" class="mute"><span class="dot"></span>Connexion…</span></header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-remote" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="7.5" r="1.8"/><path d="M10 13h.01M14 13h.01M10 16.5h.01M14 16.5h.01"/></symbol>
+  <symbol id="i-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-8 9"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 21h8M12 17v4"/><path d="M9 10.5l2 2 4-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="13" rx="2.5"/><path d="M8 21h8M8 2l4 3 4-3"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+  <symbol id="i-nav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2.5"/><path d="M7 12h.01M11 12h6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10.5-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+</svg>
 
-<div id="nobox" class="card hide">
+<header>
+  <div class="brand"><b>ATLAS TV</b><span id="tvName">Télécommande à distance</span></div>
+  <span id="conn" class="pill"><i></i>Connexion…</span>
+</header>
+
+<!-- aucun boîtier -->
+<div id="nobox" class="card hide" style="margin-top:20px">
   <h2>Aucun boîtier</h2>
-  <p class="mute">Scannez le QR code du boîtier ATLAS avec l'appareil photo de l'iPhone.</p>
+  <p class="mute">Scannez le QR code du boîtier ATLAS (étiquette ou écran de la TV) avec l'appareil photo de l'iPhone.</p>
 </div>
 
+<!-- installation de la TV -->
 <div id="setup" class="card hide">
   <h2>Installation de la TV</h2>
   <div id="setupMsg" class="mute" style="margin-bottom:12px">Le boîtier est en ligne. Recherchez la TV sur le réseau.</div>
@@ -82,214 +173,328 @@ select{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid 
   <div id="pairBanner" class="banner hide"></div>
   <div id="found" class="list" style="margin-top:12px"></div>
   <div id="codeBox" class="hide" style="margin-top:8px">
-    <p>Entrez le code affiché sur la TV :</p>
-    <div class="row"><input id="code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="ex. 4F2A9C"><button class="primary" style="width:110px" id="codeBtn">Valider</button></div>
+    <p class="mute">Code affiché sur la TV :</p>
+    <div class="row"><input id="code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="ex. 4F2A9C"><button class="primary" id="codeBtn">Valider</button></div>
   </div>
 </div>
 
-<div id="remote" class="hide">
-  <div class="card">
-    <div class="status">
-      <div><span class="mute">Télévision</span><b id="sPower">—</b></div>
-      <div><span class="mute">Chaîne</span><b id="sCh">—</b></div>
-      <div><span class="mute">Écran</span><b id="sApp">—</b></div>
-      <div><span class="mute">Volume</span><b id="sVol">—</b></div>
-    </div>
-  </div>
-
-  <div class="card hide" id="screenCard">
-    <h2>Écran de la TV</h2>
-    <div id="scrOff">
-      <p class="mute" style="margin-top:0">Voyez les menus affichés sur la TV pour guider la télécommande. À activer une fois, sur place.</p>
-      <details><summary>Préparer la box (sur place, 2 min)</summary>
-        <ol class="mute"><li>Sur la box : Paramètres → Préférences de l'appareil → À propos.</li><li>Appuyez 7 fois sur « Build » jusqu'au message « Vous êtes développeur ».</li><li>Retour → Options pour les développeurs → activez « Débogage USB » / « Débogage réseau ».</li><li>Touchez le bouton ci-dessous, puis sur la TV cochez « Toujours autoriser » et validez.</li></ol></details>
-      <button class="primary" id="scrEnable" style="margin-top:10px">Activer la vue écran</button>
-      <div id="scrBanner" class="banner hide"></div>
-    </div>
-    <div id="scrOn" class="hide">
-      <div class="shot"><img id="scrImg" alt=""><div class="empty" id="scrEmpty">Touchez « Actualiser » pour voir l'écran</div><span class="age hide" id="scrAge"></span></div>
-      <div class="focus" id="scrFocus"></div>
-      <div class="mute" id="scrTexts" style="margin-bottom:10px"></div>
-      <div class="grid g2"><button id="scrShot">📷 Actualiser</button><button id="scrLive">▶ Suivre en direct</button></div>
-      <p class="mute" style="margin:10px 2px 0">En mode direct, l'écran s'actualise après chaque bouton. L'image des chaînes reste noire (protégée) : seuls les menus sont visibles.</p>
-    </div>
-  </div>
-
-  <div class="card"><button class="big" data-a="repair">🔧 Réparer la télé</button>
-    <p class="mute" style="margin:10px 2px 0">Allume la TV, sort des menus, remet la chaîne <span id="favCh">1</span> et un volume normal.</p></div>
-
-  <div class="card" id="photoCard">
-    <h2>📷 Photos sur la TV</h2>
-    <div id="hdmiWarn" class="banner err hide"><span class="ico">🔌</span><span>Câble HDMI du boîtier non détecté. Branchez-le sur une entrée libre de la TV (et activez Anynet+/HDMI-CEC sur la TV) pour que la TV bascule toute seule.</span></div>
-    <div id="slideState" class="mute" style="margin-bottom:10px"></div>
-    <div class="grid g2"><button class="primary" id="slideGo">▶ Lancer le diaporama</button><button id="slideStop">⏹ Revenir à la TV</button></div>
-    <button id="phAdd" style="margin-top:10px">➕ Ajouter des photos</button>
-    <input type="file" id="phInput" accept="image/*" multiple class="hide">
-    <div id="upProg" class="hide" style="margin-top:10px"><div class="mute" id="upTxt"></div><div class="progress"><i></i></div></div>
-    <div class="thumbs" id="thumbs"></div>
-    <details style="margin-top:12px"><summary>Options du diaporama</summary>
-      <div class="grid" style="margin-top:10px">
-        <label class="mute">Durée par photo<select id="slSec"><option value="5">5 s</option><option value="8">8 s</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option></select></label>
-        <label class="mute">Arrêt automatique (retour à la TV)<select id="slMin"><option value="10">après 10 min</option><option value="30">après 30 min</option><option value="60">après 1 h</option><option value="0">jamais</option></select></label>
-        <label class="chk"><input type="checkbox" id="slShuf"> Ordre aléatoire</label>
-      </div></details>
-  </div>
-
-  <div class="card grid g2">
-    <button data-a="power" data-on="1">⏻ Allumer</button>
-    <button data-a="power" data-on="0">Éteindre</button>
-  </div>
-
-  <div class="card grid g2">
-    <div class="grid"><div class="lbl">Chaîne</div><button data-k="ch_up">▲ Ch +</button><button data-k="ch_down">▼ Ch −</button></div>
-    <div class="grid"><div class="lbl">Volume</div><button data-k="vol_up">🔊 +</button><button data-k="vol_down">🔉 −</button></div>
-    <button data-k="mute" style="grid-column:1/3">🔇 Couper / remettre le son</button>
-  </div>
-
-  <div class="card" id="favCard"><h2>Chaînes favorites</h2><div class="favs" id="favs"></div></div>
-
-  <div class="card">
-    <h2>Numéro de chaîne</h2>
-    <div class="row"><input id="chNum" inputmode="numeric" pattern="[0-9]*" placeholder="ex. 12"><button class="primary" style="width:110px" id="chGo">Aller</button></div>
-  </div>
-
-  <div class="card">
-    <h2>Navigation</h2>
-    <div class="pad">
-      <span></span><button data-k="up">▲</button><span></span>
-      <button data-k="left">◀</button><button class="ok" data-k="ok">OK</button><button data-k="right">▶</button>
-      <span></span><button data-k="down">▼</button><span></span>
-    </div>
-    <div class="grid g3" style="margin-top:12px"><button data-k="back">↩ Retour</button><button data-k="home">⌂ Accueil</button><button data-k="guide">Guide</button></div>
-  </div>
-
-  <div class="card">
-    <details><summary>Réglages</summary>
-      <div class="grid" style="margin-top:12px">
-        <label class="mute">Chaîne du bouton « Réparer »<input id="setFav" inputmode="numeric"></label>
-        <label class="mute">Volume de confort (0 à 100)<input id="setVol" inputmode="numeric"></label>
-        <label class="mute">Favoris (numéro=nom, séparés par des virgules)<input id="setFavs" placeholder="1=RTS 1, 2=RTS 2, 3=TF1"></label>
-        <button class="primary" id="saveSet">Enregistrer</button>
-        <button id="rescan">Changer de TV</button>
-        <button id="updBtn">⬇ Mettre à jour le boîtier</button>
-        <p class="mute" id="netInfo" style="margin:4px 0 0"></p>
-        <button id="wifiBtn">📶 Changer le Wi-Fi du boîtier</button>
-        <button id="qrBtn">🔳 Afficher le QR code de l'app sur la TV</button>
-        <label class="mute">Entrée HDMI de la box (pour revenir après les photos)<select id="boxIn"></select></label>
-        <p class="mute" id="info"></p>
+<main id="app" class="hide">
+  <!-- ============ TÉLÉCOMMANDE ============ -->
+  <div data-tab="remote">
+    <div class="card">
+      <div class="status">
+        <div class="tvic" id="tvIc"><svg><use href="#i-tv"/></svg></div>
+        <div style="min-width:0"><div class="t1" id="sPower">—</div><div class="t2" id="sLine">—</div></div>
       </div>
-    </details>
+      <div class="chips" id="chips"></div>
+      <div class="vol hide" id="volBar"><i></i></div>
+      <div class="seg"><button data-a="power" data-on="1"><svg><use href="#i-power"/></svg>Allumer</button><button data-a="power" data-on="0">Éteindre</button></div>
+    </div>
+
+    <button class="repair" data-a="repair"><svg><use href="#i-wrench"/></svg><span>Réparer la télé<small id="repairSub">Chaîne 1 · volume 15</small></span></button>
+
+    <section class="sec" data-sec="chvol">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-vol"/></svg></span>Chaînes et volume<svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b grid g2">
+        <div class="grid"><div class="lbl">Chaîne</div><button data-k="ch_up">▲ Ch +</button><button data-k="ch_down">▼ Ch −</button></div>
+        <div class="grid"><div class="lbl">Volume</div><button data-k="vol_up">＋ Vol</button><button data-k="vol_down">－ Vol</button></div>
+        <button data-k="mute" style="grid-column:1/3">Couper / remettre le son</button>
+      </div>
+    </section>
+
+    <section class="sec" data-sec="favs">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-star"/></svg></span>Chaînes<span class="sub" id="favCount"></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <div class="favs" id="favs"></div>
+        <p class="mute hide" id="favEmpty" style="margin:0 0 10px">Ajoutez vos chaînes favorites dans Réglages → Télévision.</p>
+        <div class="row" style="margin-top:10px"><input id="chNum" inputmode="numeric" pattern="[0-9]*" placeholder="Numéro de chaîne"><button class="primary" id="chGo">Aller</button></div>
+      </div>
+    </section>
+
+    <section class="sec closed" data-sec="nav">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-nav"/></svg></span>Navigation dans les menus<svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <div class="pad">
+          <span></span><button data-k="up">▲</button><span></span>
+          <button data-k="left">◀</button><button class="ok" data-k="ok">OK</button><button data-k="right">▶</button>
+          <span></span><button data-k="down">▼</button><span></span>
+        </div>
+        <div class="grid g3"><button data-k="back">↩ Retour</button><button data-k="home">⌂ Accueil</button><button data-k="guide">Guide</button></div>
+      </div>
+    </section>
   </div>
-</div>
+
+  <!-- ============ PHOTOS ============ -->
+  <div data-tab="photos" class="hide">
+    <div class="card">
+      <h2>Diaporama sur la TV</h2>
+      <div id="slideState" class="mute" style="margin-bottom:12px"></div>
+      <div class="grid g2"><button class="primary" id="slideGo"><svg><use href="#i-play"/></svg>Lancer</button><button id="slideStop"><svg><use href="#i-stop"/></svg>Revenir à la TV</button></div>
+      <div id="hdmiWarn" class="banner err hide"><span class="ico">🔌</span><span style="font-weight:500">Câble HDMI du boîtier non détecté. Branchez-le sur une entrée libre de la TV et activez Anynet+ / HDMI-CEC.</span></div>
+    </div>
+
+    <section class="sec" data-sec="album">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-photo"/></svg></span>Album<span class="sub" id="phCount"></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <button id="phAdd"><svg><use href="#i-plus"/></svg>Ajouter des photos</button>
+        <input type="file" id="phInput" accept="image/*" multiple class="hide">
+        <div id="upProg" class="hide" style="margin-top:10px"><div class="mute" id="upTxt"></div><div class="progress"><i></i></div></div>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+    </section>
+
+    <section class="sec closed" data-sec="slopts">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-sliders"/></svg></span>Options du diaporama<span class="sub" id="slSum"></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <label class="f">Durée par photo<select id="slSec"><option value="5">5 secondes</option><option value="8">8 secondes</option><option value="15">15 secondes</option><option value="30">30 secondes</option><option value="60">1 minute</option></select></label>
+        <label class="f">Retour automatique à la TV<select id="slMin"><option value="10">après 10 min</option><option value="30">après 30 min</option><option value="60">après 1 h</option><option value="0">jamais</option></select></label>
+        <label class="switch"><span>Ordre aléatoire</span><input type="checkbox" id="slShuf"></label>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ ÉCRAN ============ -->
+  <div data-tab="screen" class="hide">
+    <div class="card">
+      <h2>Écran de la TV</h2>
+      <div id="scrOff">
+        <p class="mute" style="margin-top:0">Voyez les menus affichés sur la TV pour guider la télécommande. À activer une fois, sur place.</p>
+        <ol><li>Sur la box : Paramètres → Préférences de l'appareil → À propos.</li><li>Appuyez 7 fois sur « Build » jusqu'au message « Vous êtes développeur ».</li><li>Retour → Options pour les développeurs → activez « Débogage USB » / « Débogage réseau ».</li><li>Touchez le bouton ci-dessous, puis sur la TV cochez « Toujours autoriser ».</li></ol>
+        <button class="primary" id="scrEnable" style="margin-top:6px">Activer la vue écran</button>
+        <div id="scrBanner" class="banner hide"></div>
+      </div>
+      <div id="scrOn" class="hide">
+        <div class="shot"><img id="scrImg" alt=""><div class="empty" id="scrEmpty">Touchez « Actualiser » pour voir l'écran</div><span class="age hide" id="scrAge"></span></div>
+        <div class="focus" id="scrFocus"></div>
+        <div class="mute" id="scrTexts" style="margin-bottom:10px"></div>
+        <div class="grid g2"><button id="scrShot">Actualiser</button><button id="scrLive">▶ Suivre en direct</button></div>
+        <p class="mute" style="margin:10px 2px 0;font-size:13px">En direct, l'écran s'actualise après chaque bouton. L'image des chaînes reste noire (protégée) : seuls les menus sont visibles.</p>
+      </div>
+    </div>
+    <section class="sec" data-sec="nav2">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-nav"/></svg></span>Navigation<svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <div class="pad">
+          <span></span><button data-k="up">▲</button><span></span>
+          <button data-k="left">◀</button><button class="ok" data-k="ok">OK</button><button data-k="right">▶</button>
+          <span></span><button data-k="down">▼</button><span></span>
+        </div>
+        <div class="grid g3"><button data-k="back">↩ Retour</button><button data-k="home">⌂ Accueil</button><button data-k="guide">Guide</button></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ RÉGLAGES ============ -->
+  <div data-tab="settings" class="hide">
+    <section class="sec" data-sec="s-tv">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-tv"/></svg></span>Télévision<svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <label class="f">Chaîne du bouton « Réparer »<input id="setFav" inputmode="numeric"></label>
+        <label class="f">Volume de confort (0 à 100)<input id="setVol" inputmode="numeric"></label>
+        <label class="f">Chaînes favorites (numéro=nom, séparés par des virgules)<input id="setFavs" placeholder="1=RTS 1, 2=RTS 2, 3=TF1"></label>
+        <button class="primary" id="saveSet">Enregistrer</button>
+      </div>
+    </section>
+
+    <section class="sec" data-sec="s-sched">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-clock"/></svg></span>Programmation<span class="sub" id="schedSum"></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b">
+        <label class="switch"><span>Éteindre la TV chaque soir</span><input type="checkbox" id="offOn"></label>
+        <input type="time" id="offTime" value="23:00">
+        <hr>
+        <label class="switch"><span>Allumer la TV chaque jour</span><input type="checkbox" id="onOn"></label>
+        <input type="time" id="onTime" value="08:00">
+        <button class="primary" id="saveSched" style="margin-top:14px">Enregistrer la programmation</button>
+        <p class="mute" style="margin:10px 2px 0;font-size:13px">L'allumage automatique dépend de la TV (Samsung : réveil réseau ; box Swisscom : veille normale).</p>
+      </div>
+    </section>
+
+    <section class="sec closed" data-sec="s-box">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-box"/></svg></span>Boîtier ATLAS<span class="sub" id="boxSum"></span><svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b grid">
+        <p class="mute" id="netInfo" style="margin:0"></p>
+        <button id="updBtn">Mettre à jour le boîtier</button>
+        <button id="qrBtn">Afficher le QR code de l'app sur la TV</button>
+        <button id="wifiBtn">Changer le Wi-Fi du boîtier</button>
+        <label class="f" style="margin:4px 0 0">Entrée HDMI de la box (retour après les photos)<select id="boxIn"></select></label>
+      </div>
+    </section>
+
+    <section class="sec closed" data-sec="s-adv">
+      <button class="sec-h"><span class="ic"><svg><use href="#i-list"/></svg></span>Avancé<svg class="chev"><use href="#i-chev"/></svg></button>
+      <div class="sec-b grid">
+        <button class="danger" id="rescan">Oublier cette TV et en chercher une autre</button>
+        <p class="mute" id="info" style="margin:0;font-size:13px"></p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<nav id="tabs" class="hide">
+  <button data-go="remote" class="act"><svg><use href="#i-remote"/></svg>Télécommande</button>
+  <button data-go="photos"><svg><use href="#i-photo"/></svg>Photos</button>
+  <button data-go="screen" id="tabScreen"><svg><use href="#i-screen"/></svg>Écran</button>
+  <button data-go="settings"><svg><use href="#i-gear"/></svg>Réglages</button>
+</nav>
 <div id="toast"></div>
 
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script>
-const $ = s => document.querySelector(s);
-const toast = (t, ms=2200) => { const e=$('#toast'); e.textContent=t; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'), ms); };
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const toast = (t, ms=2400) => { const e=$('#toast'); e.textContent=t; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'), ms); };
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }, set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} } };
 
-// --- configuration : lue dans le lien du QR code, puis mémorisée
+// ---- effet d'appui : onde + légère vibration (Android)
+document.addEventListener('touchstart', () => {}, {passive:true}); // active :active sur iPhone
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 2.2, sp = document.createElement('span');
+  sp.className = 'rip'; sp.style.width = sp.style.height = d + 'px';
+  sp.style.left = (e.clientX - r.left - d/2) + 'px'; sp.style.top = (e.clientY - r.top - d/2) + 'px';
+  b.appendChild(sp); setTimeout(() => sp.remove(), 600);
+  b.classList.add('pressed'); const up = () => { b.classList.remove('pressed'); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+  addEventListener('pointerup', up); addEventListener('pointercancel', up);
+}, {passive:true});
+
+// ---- sections repliables (état mémorisé) et onglets
+const ui = store.get('atlas_ui', {});
+$$('.sec').forEach(sec => {
+  const id = sec.dataset.sec; if (id in ui) sec.classList.toggle('closed', !ui[id]);
+  sec.querySelector('.sec-h').addEventListener('click', () => { sec.classList.toggle('closed'); ui[id] = !sec.classList.contains('closed'); store.set('atlas_ui', ui); });
+});
+let tab = store.get('atlas_tab', 'remote');
+function go(t){
+  tab = t; store.set('atlas_tab', t);
+  $$('[data-tab]').forEach(el => el.classList.toggle('hide', el.dataset.tab !== t));
+  $$('nav [data-go]').forEach(b => b.classList.toggle('act', b.dataset.go === t));
+  window.scrollTo({top:0});
+}
+$$('nav [data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
+
+// ---- configuration : lue dans le lien du QR code, puis mémorisée
 function readCfg(){
   const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get('d')) { const c={h:h.get('h'),port:h.get('port')||'8084',ws:h.get('ws'),u:h.get('u'),p:h.get('p'),d:h.get('d'),k:h.get('k')};
-    try{localStorage.setItem('atlas',JSON.stringify(c))}catch(e){} return c; }
-  try{ return JSON.parse(localStorage.getItem('atlas')||'null'); }catch(e){ return null; }
+  if (h.get('d')) { const c={h:h.get('h'),port:h.get('port')||'8084',ws:h.get('ws'),u:h.get('u'),p:h.get('p'),d:h.get('d'),k:h.get('k')}; store.set('atlas', c); return c; }
+  return store.get('atlas', null);
 }
 const cfg = readCfg();
 let state = null, online = false, discovered = [];
 
-if (!cfg) { $('#nobox').classList.remove('hide'); }
+if (!cfg) { $('#nobox').classList.remove('hide'); $('#conn').classList.add('hide'); }
 else {
   const base = `atlas/${cfg.d}`;
   const client = mqtt.connect(`${cfg.ws?'ws':'wss'}://${cfg.h}:${cfg.port}/mqtt`, {username:cfg.u, password:cfg.p, clientId:'app-'+Math.random().toString(16).slice(2,10), reconnectPeriod:2000, connectTimeout:10000});
-  const pending = {};
+  const pending = {}, waiters = {};
   const send = (o, btn) => {
-    if(!client.connected){toast('Pas de connexion internet');return null;}
-    if(!online){toast('⚠️ Le boîtier est hors ligne');return null;}
+    if(!client.connected){ toast('Pas de connexion internet'); return null; }
+    if(!online){ toast('⚠️ Le boîtier est hors ligne'); return null; }
     o.k=cfg.k; o.cid=Math.random().toString(36).slice(2,8);
     client.publish(`${base}/cmd`, JSON.stringify(o), {qos:1});
-    if (btn){ pending[o.cid]=btn; btn.classList.add('chosen');
-      setTimeout(()=>{ if(pending[o.cid]===btn){ btn.classList.remove('chosen'); delete pending[o.cid]; } }, 15000); }
+    if (btn){ pending[o.cid]=btn; btn.classList.add('chosen'); setTimeout(()=>{ if(pending[o.cid]===btn){ btn.classList.remove('chosen'); delete pending[o.cid]; } }, 15000); }
     return o.cid;
   };
+  const sendWait = (o, ms=45000) => new Promise(res => { const cid=send(o); if(!cid) return res({ok:false,message:'hors ligne'}); waiters[cid]=res; setTimeout(()=>{ if(waiters[cid]){ delete waiters[cid]; res({ok:false,message:'pas de réponse du boîtier'}); } }, ms); });
   const flash = (btn, ok) => { btn.classList.remove('chosen'); const c=ok?'flash-ok':'flash-err'; btn.classList.add(c); setTimeout(()=>btn.classList.remove(c), 450); };
-  const busy = (btn, html) => { if(!btn._html) btn._html=btn.innerHTML; btn.innerHTML=`<span class="spin"></span>${html}`; btn.classList.add('busy'); };
+  const busy = (btn, html) => { btn.querySelectorAll('.rip').forEach(x=>x.remove()); if(!btn._html) btn._html=btn.innerHTML; btn.innerHTML=`<span class="spin"></span>${html}`; btn.classList.add('busy'); };
   const unbusy = (btn) => { if(btn._html){ btn.innerHTML=btn._html; btn._html=null; } btn.classList.remove('busy'); };
-  const banner = (cls, ico, html) => { const b=$('#pairBanner'); b.className='banner '+cls; b.innerHTML=`<span class="ico">${ico}</span><span>${html}</span>`; };
+  const mkBanner = (el) => (cls, ico, html) => { el.className='banner '+cls; el.innerHTML=`<span class="ico">${ico}</span><span>${html}</span>`; };
+  const banner = mkBanner($('#pairBanner')), scrBanner = mkBanner($('#scrBanner'));
   const hideBanner = () => $('#pairBanner').className='banner hide';
-  let watchdog=null;
+  let watchdog=null, tick=null;
   const expect = (msg, ms=8000) => { clearTimeout(watchdog); watchdog=setTimeout(()=>{ banner('err','⚠️', msg); unbusy($('#scanBtn')); $('#scanProg').classList.add('hide'); }, ms); };
-  const repairBtn = document.querySelector('[data-a="repair"]');
-  let tick=null;
-  window.send = send;
+  const repairBtn = $('[data-a="repair"]');
 
   client.on('connect', () => { client.subscribe(`${base}/#`); setConn(); });
   client.on('close', setConn); client.on('offline', setConn);
   client.on('message', (topic, msg) => {
     const t = topic.slice(base.length+1), s = msg.toString();
-    if (t==='online') { online = s==='1'; setConn(); render(); }
-    else if (t==='state') { try{ state = JSON.parse(s); }catch(e){} render(); }
-    else if (t==='event') { try{ onEvent(JSON.parse(s)); }catch(e){} }
-    else if (t==='screen') { try{ showScreen(JSON.parse(s)); }catch(e){} }
-    else if (t==='photos') { try{ showPhotos(JSON.parse(s)); }catch(e){} }
+    try {
+      if (t==='online') { online = s==='1'; setConn(); render(); }
+      else if (t==='state') { state = JSON.parse(s); render(); }
+      else if (t==='event') onEvent(JSON.parse(s));
+      else if (t==='screen') showScreen(JSON.parse(s));
+      else if (t==='photos') showPhotos(JSON.parse(s));
+    } catch(e) { console.warn(e); }
   });
 
   function setConn(){
-    const ok = client.connected && online;
-    $('#conn').innerHTML = `<span class="dot ${ok?'on':''}"></span>${!client.connected?'Hors connexion':online?'Boîtier en ligne':'Boîtier hors ligne'}`;
+    const ok = client.connected && online, el=$('#conn');
+    el.className = 'pill'+(ok?' on':''); el.innerHTML = `<i></i>${!client.connected?'Hors connexion':online?'En ligne':'Boîtier hors ligne'}`;
   }
+
+  function prettyApp(a){
+    if(!a) return null;
+    const m = {'com.google.android.apps.tv.launcherx':'Accueil','com.google.android.tvlauncher':'Accueil','com.android.tv.settings':'Réglages','com.android.vending':'Play Store','com.netflix.ninja':'Netflix','com.google.android.youtube.tv':'YouTube','Samsung TV':null};
+    if (a in m) return m[a];
+    if (/swisscom|bluetv/i.test(a)) return 'blue TV';
+    if (/settings/i.test(a)) return 'Réglages';
+    return a.split('.').slice(-1)[0];
+  }
+  const editing = () => ['INPUT','SELECT'].includes(document.activeElement.tagName);
+  // un champ modifié par l'utilisateur n'est plus écrasé par les mises à jour du boîtier, jusqu'à l'enregistrement
+  $$('input:not([type=file]),select').forEach(el => ['input','change'].forEach(ev => el.addEventListener(ev, () => el.dataset.dirty='1')));
+  const setVal = (sel, v, prop='value') => { const el=$(sel); if(!el.dataset.dirty && document.activeElement!==el) el[prop]=v; };
+  const clean = (...sels) => sels.forEach(x => delete $(x).dataset.dirty);
 
   function render(){
     if (!state) return;
     const hasTv = !!state.active;
-    $('#setup').classList.toggle('hide', hasTv); $('#remote').classList.toggle('hide', !hasTv);
+    $('#setup').classList.toggle('hide', hasTv); $('#app').classList.toggle('hide', !hasTv); $('#tabs').classList.toggle('hide', !hasTv);
     if (!hasTv) return;
-    const tv = state.tv || {};
-    $('#sPower').textContent = tv.is_on===true?'Allumée':tv.is_on===false?'En veille':'Inconnu';
-    $('#sCh').textContent = state.last_channel ?? '—';
-    $('#sApp').textContent = prettyApp(tv.app);
-    $('#sVol').textContent = tv.volume!=null ? `${tv.volume}${tv.volume_max?' / '+tv.volume_max:''}` : '—';
-    const st = state.settings || {};
-    $('#favCh').textContent = st.fav_channel ?? 1;
-    if (document.activeElement.tagName!=='INPUT'){
-      $('#setFav').value = st.fav_channel ?? 1; $('#setVol').value = st.volume ?? st.volume_steps ?? 15;
-      $('#setFavs').value = (st.favorites||[]).map(f=>`${f.n}=${f.name}`).join(', ');
-    }
+    const tv = state.tv || {}, st = state.settings || {}, sc = state.screen || {}, hd = state.hdmi || {}, sl = state.slideshow || {};
+    const dev = (state.devices||[]).find(d=>d.id===state.active);
+    $('#tvName').textContent = dev ? dev.name : 'Télécommande à distance';
+    // onglet Écran seulement pour les box Android
+    $('#tabScreen').classList.toggle('hide', !sc.supported); $('#tabs').style.setProperty('--n', sc.supported?4:3);
+    if (!sc.supported && tab==='screen') go('remote');
+    // statut
+    const on = tv.is_on===true;
+    $('#tvIc').classList.toggle('on', on);
+    $('#sPower').textContent = on ? 'Télé allumée' : tv.is_on===false ? 'Télé en veille' : 'État inconnu';
+    const fav = (st.favorites||[]).find(f=>f.n===state.last_channel);
+    $('#sLine').textContent = state.last_channel ? `Chaîne ${state.last_channel}${fav?' · '+fav.name:''}` : (on ? 'Chaîne inconnue' : '—');
+    const app = prettyApp(tv.app), chips=[];
+    if (sl.running) chips.push('<span class="chip">📷 Diaporama en cours</span>');
+    if (app) chips.push(`<span class="chip${app==='Réglages'?' warn':''}">${app==='Réglages'?'⚠️ Bloquée dans les réglages':esc(app)}</span>`);
+    if (tv.volume!=null) chips.push(`<span class="chip">Volume ${tv.volume}</span>`);
+    $('#chips').innerHTML = chips.join(''); $('#chips').classList.toggle('hide', !chips.length);
+    const vb=$('#volBar'); vb.classList.toggle('hide', tv.volume==null); if(tv.volume!=null) vb.firstElementChild.style.width = Math.round(100*tv.volume/(tv.volume_max||100))+'%';
+    $('#repairSub').textContent = `Chaîne ${st.fav_channel ?? 1} · volume ${st.volume ?? st.volume_steps ?? 15}`;
+    // favoris
     const favs = st.favorites||[];
-    $('#favCard').classList.toggle('hide', !favs.length);
-    $('#favs').innerHTML = favs.map(f=>`<button data-ch="${f.n}">${esc(f.name)}<br><span class="mute">${f.n}</span></button>`).join('');
-    const sc = state.screen || {};
-    $('#screenCard').classList.toggle('hide', !sc.supported);
+    $('#favs').innerHTML = favs.map(f=>`<button data-ch="${f.n}">${esc(f.name)}<small>${f.n}</small></button>`).join('');
+    $('#favEmpty').classList.toggle('hide', !!favs.length); $('#favCount').textContent = favs.length ? favs.length+' favorites' : '';
+    // écran
     $('#scrOff').classList.toggle('hide', !!sc.enabled); $('#scrOn').classList.toggle('hide', !sc.enabled);
-    const hd = state.hdmi || {}, sl = state.slideshow || {};
+    // photos
     $('#hdmiWarn').classList.toggle('hide', !!hd.cec);
-    $('#slideState').innerHTML = sl.running ? `<b style="color:var(--ok)">● Diaporama en cours sur la TV</b>${sl.until? ' · retour à la TV à '+new Date(sl.until*1000).toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'}):''}`
-      : hd.showing==='setup' ? 'La TV affiche l’écran d’installation Wi-Fi.' : hd.showing==='pair_qr' ? 'La TV affiche le QR code de l’app.' : 'Ajoutez des photos puis lancez le diaporama.';
-    if (document.activeElement.tagName!=='SELECT'){ $('#slSec').value=String(sl.seconds??8); $('#slMin').value=String(sl.minutes??30); $('#slShuf').checked=sl.shuffle!==false;
+    const until = sl.until ? new Date(sl.until*1000).toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'}) : null;
+    $('#slideState').innerHTML = sl.running ? `<span class="live"><i></i>En cours sur la TV</span>${until?' · retour à la TV à '+until:''}`
+      : hd.showing==='setup' ? 'La TV affiche l’écran d’installation Wi-Fi.' : hd.showing==='pair_qr' ? 'La TV affiche le QR code de l’app.' : 'Les photos de l’album défilent en plein écran sur la TV.';
+    $('#slSum').textContent = `${sl.seconds??8} s · ${sl.minutes?sl.minutes+' min':'sans limite'}`;
+    setVal('#slSec', String(sl.seconds??8)); setVal('#slMin', String(sl.minutes??30)); setVal('#slShuf', sl.shuffle!==false, 'checked');
+    setVal('#setFav', st.fav_channel ?? 1); setVal('#setVol', st.volume ?? st.volume_steps ?? 15);
+    setVal('#setFavs', favs.map(f=>`${f.n}=${f.name}`).join(', '));
+    setVal('#offOn', !!st.off_time, 'checked'); if(st.off_time) setVal('#offTime', st.off_time);
+    setVal('#onOn', !!st.on_time, 'checked'); if(st.on_time) setVal('#onTime', st.on_time);
+    if (!$('#boxIn').dataset.dirty && document.activeElement!==$('#boxIn')){
       $('#boxIn').innerHTML = `<option value="">Automatique</option>` + (hd.devices||[]).map(d=>`<option value="${d.phys}">${esc(d.name||d.type)} (${d.phys})</option>`).join('');
       $('#boxIn').value = hd.box || ''; }
+    $('#schedSum').textContent = [st.off_time && 'arrêt '+st.off_time, st.on_time && 'marche '+st.on_time].filter(Boolean).join(' · ') || 'aucune';
     const net = state.net || {};
-    $('#netInfo').textContent = net.ethernet ? 'Connexion du boîtier : câble réseau' : net.wifi ? 'Connexion du boîtier : Wi-Fi « '+net.wifi+' »' : '';
-    const dev = (state.devices||[]).find(d=>d.id===state.active);
-    $('#info').textContent = dev ? `TV : ${dev.name} (${dev.kind}, ${dev.ip}) · agent ${state.agent}` : '';
-  }
-  const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  function prettyApp(a){
-    if(!a) return '—';
-    const m = {'com.google.android.apps.tv.launcherx':'Accueil','com.google.android.tvlauncher':'Accueil','com.android.tv.settings':'⚠️ Réglages','com.android.vending':'Play Store','com.netflix.ninja':'Netflix','com.google.android.youtube.tv':'YouTube'};
-    if (m[a]) return m[a];
-    if (/swisscom|bluetv/i.test(a)) return 'blue TV';
-    if (/settings/i.test(a)) return '⚠️ Réglages';
-    return a.split('.').slice(-1)[0];
+    $('#netInfo').textContent = net.ethernet ? 'Connecté par câble réseau' : net.wifi ? 'Connecté au Wi-Fi « '+net.wifi+' »' : '';
+    $('#boxSum').textContent = 'v'+(state.agent||'?');
+    $('#info').textContent = dev ? `TV : ${dev.name} · ${dev.kind==='androidtv'?'Android TV':'Samsung'} · ${dev.ip} · agent ${state.agent}` : '';
   }
 
+  // ---- photos
   function showPhotos(d){
     const items=d.items||[];
     $('#thumbs').innerHTML = items.slice().reverse().map(p=>`<div>${p.thumb?`<img src="data:image/jpeg;base64,${p.thumb}" alt="">`:''}<button data-del="${p.id}" aria-label="Supprimer">✕</button></div>`).join('');
+    $('#phCount').textContent = items.length ? items.length+' photo'+(items.length>1?'s':'') : 'vide';
     $('#slideGo').disabled = !items.length;
   }
-  const waiters={};
-  const sendWait = (o, ms=45000) => new Promise((res)=>{ const cid=send(o); if(!cid) return res({ok:false,message:'hors ligne'}); waiters[cid]=res; setTimeout(()=>{ if(waiters[cid]){ delete waiters[cid]; res({ok:false,message:'pas de réponse'}); } }, ms); });
   async function prepPhoto(file){
     let bmp; try{ bmp = await createImageBitmap(file); }catch(e){ bmp = await new Promise((r,j)=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=j; i.src=URL.createObjectURL(file); }); }
     const W=bmp.width, H=bmp.height, k=Math.min(1, 1920/W, 1080/H);
@@ -302,11 +507,13 @@ else {
     const box=$('#upProg'); box.classList.remove('hide'); let ok=0;
     for (let i=0;i<files.length;i++){
       $('#upTxt').textContent = `Envoi de la photo ${i+1} sur ${files.length}…`;
-      try{ const data=await prepPhoto(files[i]); const r=await sendWait({action:'photo_add', data}); if(r.ok) ok++; else toast('⚠️ '+(r.message||'échec')); }
+      try{ const r=await sendWait({action:'photo_add', data: await prepPhoto(files[i])}); if(r.ok) ok++; else toast('⚠️ '+(r.message||'échec')); }
       catch(e){ toast('⚠️ Photo illisible : '+files[i].name); }
     }
-    box.classList.add('hide'); toast(`✅ ${ok} photo(s) ajoutée(s)`);
+    box.classList.add('hide'); toast(`✅ ${ok} photo${ok>1?'s':''} ajoutée${ok>1?'s':''}`);
   }
+
+  // ---- écran
   let lastShot=0, live=false, liveT=null, liveEnd=0;
   function showScreen(d){
     if(!d.img) return;
@@ -322,9 +529,15 @@ else {
     live=on; clearInterval(liveT); const b=$('#scrLive'); b.classList.toggle('on', on); b.textContent = on ? '⏸ Direct activé' : '▶ Suivre en direct';
     if(on){ liveEnd=Date.now()+5*60000; send({action:'screen', watch:120}); liveT=setInterval(()=>{ if(Date.now()>liveEnd){ setLive(false); return;} send({action:'screen', watch:120}); }, 100000); }
   }
-  const scrBanner = (cls, ico, html) => { const b=$('#scrBanner'); b.className='banner '+cls; b.innerHTML=`<span class="ico">${ico}</span><span>${html}</span>`; };
 
+  // ---- événements du boîtier
   function onEvent(e){
+    if (e.type==='ack' && waiters[e.cid]){ waiters[e.cid](e); delete waiters[e.cid]; }
+    if (e.type==='ack'){ const b=pending[e.cid]; if(b){ delete pending[e.cid]; if(b.dataset.k||b.dataset.ch||b.dataset.a==='power') flash(b, e.ok); else b.classList.remove('chosen'); }
+      if(!e.ok && e.message) toast('⚠️ '+e.message, 3500); }
+    if (e.type==='tv_auth') toast(e.step==='accept' ? '📺 La TV demande une autorisation : appuyez sur « Autoriser » avec la télécommande' : '✅ TV autorisée', e.step==='accept'?20000:2500);
+    if (e.type==='slideshow' && e.step==='ended') toast('Diaporama terminé, retour à la TV');
+    if (e.type==='schedule') toast(e.action==='off' ? `🌙 TV éteinte (programmation ${e.time})` : `☀️ TV allumée (programmation ${e.time})`, 4000);
     if (e.type==='screen'){
       if (e.step==='connecting') scrBanner('wait','<span class="spin"></span>','Connexion à la box…');
       if (e.step==='authorize') scrBanner('wait pulse','📺','Sur la TV : cochez <b>« Toujours autoriser »</b> puis validez <b>Autoriser</b>.');
@@ -332,20 +545,14 @@ else {
       if (e.step==='error'){ if(!$('#scrOff').classList.contains('hide')){ scrBanner('err','⚠️', esc(e.message)); unbusy($('#scrEnable')); } else { toast('⚠️ '+e.message, 3500); unbusy($('#scrShot')); } }
     }
     if (e.type==='update'){
-      if (e.step==='download') toast('⬇ Téléchargement de la mise à jour…', 4000);
+      if (e.step==='download') toast('Téléchargement de la mise à jour…', 4000);
       if (e.step==='restart'){ toast('✅ Version '+e.version+' installée, redémarrage du boîtier…', 5000); unbusy($('#updBtn')); }
     }
-    if (e.type==='ack' && waiters[e.cid]){ waiters[e.cid](e); delete waiters[e.cid]; }
-    if (e.type==='tv_auth') toast(e.step==='accept' ? '📺 La TV demande une autorisation : appuyez sur « Autoriser » avec la télécommande' : '✅ TV autorisée', e.step==='accept'?20000:2500);
-    if (e.type==='slideshow' && e.step==='ended') toast('Diaporama terminé, retour à la TV');
-    if (e.type==='hdmi' && e.raw) console.log(e.raw);
-    if (e.type==='ack'){ const b=pending[e.cid]; if(b){ delete pending[e.cid]; if(b.dataset.k||b.dataset.ch||b.dataset.a==='power') flash(b, e.ok); else b.classList.remove('chosen'); }
-      if(!e.ok && e.message) toast('⚠️ '+e.message, 3500); }
     if (e.type==='scan'){
       if (e.step==='start'){ expect('La recherche prend trop de temps. Réessayez.', 40000); $('#setupMsg').textContent='Recherche des TV sur le réseau… (≈ 10 s)'; $('#found').innerHTML=''; }
       if (e.step==='done'){ clearTimeout(watchdog); discovered=e.devices||[]; unbusy($('#scanBtn')); $('#scanProg').classList.add('hide'); hideBanner();
-        $('#setupMsg').textContent = discovered.length ? 'TV trouvée(s). Choisissez la vôtre :' : 'Aucune TV trouvée. Vérifiez qu\'elle est allumée et sur le même réseau, puis réessayez.';
-        $('#found').innerHTML = discovered.map(d=>`<button data-pair="${d.id}"><b>${esc(d.name)}</b><br><span class="mute">${d.kind==='androidtv'?'Android TV / box Swisscom':'Samsung'} · ${d.ip}</span></button>`).join('');
+        $('#setupMsg').textContent = discovered.length ? 'Choisissez votre TV :' : 'Aucune TV trouvée. Vérifiez qu’elle est allumée et sur le même réseau, puis réessayez.';
+        $('#found').innerHTML = discovered.map(d=>`<button data-pair="${d.id}"><b>${esc(d.name)}</b><small>${d.kind==='androidtv'?'Android TV / box Swisscom':'Samsung'} · ${d.ip}</small></button>`).join('');
       }
     }
     if (e.type==='pairing'){
@@ -354,48 +561,60 @@ else {
         tick=setInterval(()=>{ n--; if(n<=0){ clearInterval(tick); return;} up(); },1000); }
       if (e.step==='starting') banner('wait','<span class="spin"></span>','Connexion à la TV…');
       if (e.step==='code_needed'){ banner(e.error?'err':'wait pulse', e.error?'⚠️':'📺', e.error ? 'Code refusé. Vérifiez le code affiché sur la TV et réessayez.' : 'Un <b>code</b> est affiché sur la TV. Tapez-le ci-dessous.'); $('#codeBox').classList.remove('hide'); unbusy($('#codeBtn')); $('#code').focus(); }
-      if (e.step==='done'){ $('#codeBox').classList.add('hide'); banner('good','✅', e.already ? 'TV déjà autorisée, rien à faire sur la TV.' : 'TV associée ! Ouverture de la télécommande…'); toast('✅ TV associée !'); setTimeout(hideBanner, 3000); }
+      if (e.step==='done'){ $('#codeBox').classList.add('hide'); banner('good','✅', e.already ? 'TV déjà autorisée, rien à faire sur la TV.' : 'TV associée !'); toast('✅ TV associée !'); setTimeout(hideBanner, 3000); go('remote'); }
       if (e.step==='error'){ banner('err','⚠️','Échec : '+esc(e.message||'la TV n’a pas répondu')+'.<br><span style="font-weight:400">Vérifiez que la TV est allumée, puis réessayez.</span>'); $('#codeBox').classList.add('hide'); unbusy($('#codeBtn'));
-        document.querySelectorAll('[data-pair]').forEach(x=>{x.classList.remove('busy','chosen'); unbusy(x);}); }
+        $$('[data-pair]').forEach(x=>{ x.classList.remove('busy','chosen'); unbusy(x); }); }
     }
     if (e.type==='repair'){
       if (e.step==='start'){ busy(repairBtn,'Réparation en cours… (≈ 30 s)'); clearTimeout(repairBtn._t); repairBtn._t=setTimeout(()=>unbusy(repairBtn), 90000); }
+      if (e.step==='channel') busy(repairBtn, `Chaîne ${e.channel}…`);
       if (e.step==='done'){ unbusy(repairBtn); toast('✅ Télé réparée'); }
       if (e.step==='error'){ unbusy(repairBtn); toast('⚠️ '+e.message, 4000); }
     }
   }
 
+  // ---- actions
   document.addEventListener('click', ev => {
-    const b = ev.target.closest('button'); if(!b) return;
-    if (b.dataset.k){ send({action:'key', key:b.dataset.k}, b); if(navigator.vibrate) navigator.vibrate(15); }
+    const b = ev.target.closest('button'); if(!b || b.closest('nav') || b.classList.contains('sec-h')) return;
+    if (b.dataset.k){ send({action:'key', key:b.dataset.k}, b); if(navigator.vibrate) navigator.vibrate(12); }
     else if (b.dataset.a==='repair'){ if(send({action:'repair'})) busy(b,'Envoi…'); }
     else if (b.dataset.a==='power') send({action:'power', on: b.dataset.on==='1'}, b);
-    else if (b.dataset.ch) { send({action:'channel', number:+b.dataset.ch}, b); toast('Chaîne '+b.dataset.ch); }
+    else if (b.dataset.ch) { send({action:'channel', number:+b.dataset.ch}, b); }
     else if (b.dataset.del){ if(confirm('Supprimer cette photo ?')) send({action:'photo_del', id:b.dataset.del}); }
     else if (b.dataset.pair){ if(send({action:'pair_start', device:b.dataset.pair})){
-        document.querySelectorAll('[data-pair]').forEach(x=>x.classList.add('busy')); b.classList.add('chosen'); busy(b,'Connexion à cette TV…');
+        $$('[data-pair]').forEach(x=>x.classList.add('busy')); b.classList.add('chosen'); busy(b,'Connexion à cette TV…');
         banner('wait','<span class="spin"></span>','Demande envoyée à la TV…'); expect('La TV ne répond pas. Vérifiez qu’elle est allumée et réessayez.', 50000); } }
   });
   $('#scanBtn').onclick = () => { if(send({action:'scan'})){ busy($('#scanBtn'),'Recherche en cours…'); $('#scanProg').classList.remove('hide'); hideBanner(); $('#found').innerHTML=''; expect('Le boîtier ne répond pas. Vérifiez qu’il est branché et en ligne.', 8000); } };
   $('#codeBtn').onclick = () => { const c=$('#code').value.trim(); if(c && send({action:'pair_finish', code:c})){ busy($('#codeBtn'),''); banner('wait','<span class="spin"></span>','Vérification du code…'); } };
-  $('#chGo').onclick = () => { const n=parseInt($('#chNum').value); if(n>0){ send({action:'channel', number:n}); $('#chNum').value=''; $('#chNum').blur(); toast('Chaîne '+n);} };
-  $('#saveSet').onclick = () => {
+  $('#chGo').onclick = () => { const n=parseInt($('#chNum').value); if(n>0){ send({action:'channel', number:n}, $('#chGo')); $('#chNum').value=''; $('#chNum').blur(); } };
+  $('#saveSet').onclick = async () => {
     const favorites = $('#setFavs').value.split(',').map(x=>x.split('=')).filter(x=>x.length===2 && +x[0]>0).map(([n,name])=>({n:+n.trim(), name:name.trim()}));
-    send({action:'settings', fav_channel:+$('#setFav').value||1, volume:Math.max(0,Math.min(100,+$('#setVol').value||15)), favorites}); toast('Réglages enregistrés');
+    const fav = parseInt($('#setFav').value) || 1, vol = Math.max(0, Math.min(100, parseInt($('#setVol').value) || 15));
+    document.activeElement.blur(); const b=$('#saveSet'); busy(b,'Enregistrement…');
+    const r = await sendWait({action:'settings', fav_channel:fav, volume:vol, favorites}); unbusy(b);
+    if (r.ok){ clean('#setFav','#setVol','#setFavs'); toast(`✅ Enregistré : chaîne ${fav}, volume ${vol}`); } else toast('⚠️ Non enregistré : '+(r.message||'réessayez'));
+  };
+  $('#saveSched').onclick = async () => {
+    document.activeElement.blur(); const b=$('#saveSched'); busy(b,'Enregistrement…');
+    const r = await sendWait({action:'settings', off_time: $('#offOn').checked ? $('#offTime').value : '', on_time: $('#onOn').checked ? $('#onTime').value : ''}); unbusy(b);
+    if (r.ok){ clean('#offOn','#offTime','#onOn','#onTime'); toast($('#offOn').checked||$('#onOn').checked ? '✅ Programmation enregistrée' : 'Programmation désactivée'); } else toast('⚠️ Non enregistré');
   };
   const slOpts = () => ({seconds:+$('#slSec').value, minutes:+$('#slMin').value, shuffle:$('#slShuf').checked});
+  ['#slSec','#slMin','#slShuf'].forEach(id => $(id).addEventListener('change', async () => { const r=await sendWait({action:'settings_slideshow', ...slOpts()}); if(r.ok) clean('#slSec','#slMin','#slShuf'); }));
   $('#slideGo').onclick = async () => { const b=$('#slideGo'); busy(b,'Lancement…'); const r=await sendWait({action:'slideshow_start', ...slOpts()}); unbusy(b); toast(r.ok?'▶ Diaporama lancé sur la TV':'⚠️ '+(r.message||'échec'), 3500); };
   $('#slideStop').onclick = async () => { const b=$('#slideStop'); busy(b,'Retour…'); await sendWait({action:'slideshow_stop'}); unbusy(b); toast('Retour à la TV'); };
   $('#phAdd').onclick = () => $('#phInput').click();
   $('#phInput').onchange = (e) => { const f=[...e.target.files]; e.target.value=''; if(f.length) uploadPhotos(f); };
-  $('#wifiBtn').onclick = () => { if(confirm('Le boîtier va se déconnecter et afficher les instructions sur la TV. Il faut être devant la TV. Continuer ?')) send({action:'wifi_setup'}); };
-  $('#qrBtn').onclick = () => { send({action:'show_qr', minutes:5}); toast('QR code affiché sur la TV pendant 5 min'); };
-  $('#boxIn').onchange = () => send({action:'set_box_input', phys:$('#boxIn').value});
   $('#scrEnable').onclick = () => { if(send({action:'screen_enable'})){ busy($('#scrEnable'),'Activation…'); scrBanner('wait','<span class="spin"></span>','Demande envoyée…'); } };
   $('#scrShot').onclick = () => { if(send({action:'screen', watch: live?120:0})) busy($('#scrShot'),'Capture…'); };
   $('#scrLive').onclick = () => setLive(!live);
   $('#updBtn').onclick = () => { if(confirm('Installer la dernière version du logiciel sur le boîtier ?') && send({action:'update'})) busy($('#updBtn'),'Mise à jour…'); };
+  $('#wifiBtn').onclick = () => { if(confirm('Le boîtier va se déconnecter et afficher les instructions sur la TV. Il faut être devant la TV. Continuer ?')) send({action:'wifi_setup'}); };
+  $('#qrBtn').onclick = () => { send({action:'show_qr', minutes:5}); toast('QR code affiché sur la TV pendant 5 min'); };
+  $('#boxIn').addEventListener('change', async () => { const r=await sendWait({action:'set_box_input', phys:$('#boxIn').value}); if(r.ok) clean('#boxIn'); });
   $('#rescan').onclick = () => { if(confirm('Oublier cette TV et en rechercher une autre ?')) send({action:'forget'}); };
+  go(tab);
 }
 </script>
 </body>
