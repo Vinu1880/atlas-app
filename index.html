@@ -167,7 +167,7 @@ select{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid 
     <details><summary>Réglages</summary>
       <div class="grid" style="margin-top:12px">
         <label class="mute">Chaîne du bouton « Réparer »<input id="setFav" inputmode="numeric"></label>
-        <label class="mute">Volume de confort (nombre d'appuis sur +)<input id="setVol" inputmode="numeric"></label>
+        <label class="mute">Volume de confort (0 à 100)<input id="setVol" inputmode="numeric"></label>
         <label class="mute">Favoris (numéro=nom, séparés par des virgules)<input id="setFavs" placeholder="1=RTS 1, 2=RTS 2, 3=TF1"></label>
         <button class="primary" id="saveSet">Enregistrer</button>
         <button id="rescan">Changer de TV</button>
@@ -252,7 +252,7 @@ else {
     const st = state.settings || {};
     $('#favCh').textContent = st.fav_channel ?? 1;
     if (document.activeElement.tagName!=='INPUT'){
-      $('#setFav').value = st.fav_channel ?? 1; $('#setVol').value = st.volume_steps ?? 12;
+      $('#setFav').value = st.fav_channel ?? 1; $('#setVol').value = st.volume ?? st.volume_steps ?? 15;
       $('#setFavs').value = (st.favorites||[]).map(f=>`${f.n}=${f.name}`).join(', ');
     }
     const favs = st.favorites||[];
@@ -336,6 +336,7 @@ else {
       if (e.step==='restart'){ toast('✅ Version '+e.version+' installée, redémarrage du boîtier…', 5000); unbusy($('#updBtn')); }
     }
     if (e.type==='ack' && waiters[e.cid]){ waiters[e.cid](e); delete waiters[e.cid]; }
+    if (e.type==='tv_auth') toast(e.step==='accept' ? '📺 La TV demande une autorisation : appuyez sur « Autoriser » avec la télécommande' : '✅ TV autorisée', e.step==='accept'?20000:2500);
     if (e.type==='slideshow' && e.step==='ended') toast('Diaporama terminé, retour à la TV');
     if (e.type==='hdmi' && e.raw) console.log(e.raw);
     if (e.type==='ack'){ const b=pending[e.cid]; if(b){ delete pending[e.cid]; if(b.dataset.k||b.dataset.ch||b.dataset.a==='power') flash(b, e.ok); else b.classList.remove('chosen'); }
@@ -380,7 +381,7 @@ else {
   $('#chGo').onclick = () => { const n=parseInt($('#chNum').value); if(n>0){ send({action:'channel', number:n}); $('#chNum').value=''; $('#chNum').blur(); toast('Chaîne '+n);} };
   $('#saveSet').onclick = () => {
     const favorites = $('#setFavs').value.split(',').map(x=>x.split('=')).filter(x=>x.length===2 && +x[0]>0).map(([n,name])=>({n:+n.trim(), name:name.trim()}));
-    send({action:'settings', fav_channel:+$('#setFav').value||1, volume_steps:+$('#setVol').value||12, favorites}); toast('Réglages enregistrés');
+    send({action:'settings', fav_channel:+$('#setFav').value||1, volume:Math.max(0,Math.min(100,+$('#setVol').value||15)), favorites}); toast('Réglages enregistrés');
   };
   const slOpts = () => ({seconds:+$('#slSec').value, minutes:+$('#slMin').value, shuffle:$('#slShuf').checked});
   $('#slideGo').onclick = async () => { const b=$('#slideGo'); busy(b,'Lancement…'); const r=await sendWait({action:'slideshow_start', ...slOpts()}); unbusy(b); toast(r.ok?'▶ Diaporama lancé sur la TV':'⚠️ '+(r.message||'échec'), 3500); };

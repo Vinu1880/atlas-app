@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -391,6 +391,7 @@ class Screen:
 # --------------------------------------------------------------- pilotes
 class AndroidTV:
     kind = "androidtv"
+    notify = staticmethod(lambda **kw: None)
 
     def __init__(self, info, on_change):
         self.info = info
@@ -442,6 +443,17 @@ class AndroidTV:
         if self.is_on is None or self.is_on != on:
             await self.press("power")
 
+    async def set_volume(self, level):
+        v = self.r.volume_info if self.connected else None
+        if not v or v.get("level") is None:
+            return False
+        mx = v.get("max") or 100
+        target = round(int(level) * mx / 100)
+        diff = target - int(v["level"])
+        for _ in range(min(abs(diff), 60)):
+            await self.press("vol_up" if diff > 0 else "vol_down"); await asyncio.sleep(0.12)
+        return True
+
 
 class SamsungTV:
     kind = "samsung"
@@ -452,13 +464,44 @@ class SamsungTV:
         self.tv = SamsungTVWS(host=info["ip"], port=8002, token_file=str(DATA / f"samsung_{info['mac'] or info['ip']}.token"),
                               name="ATLAS", timeout=8)
         self._on = None
+        self._vol = None
+        self.notify = lambda **kw: None
 
     @property
     def is_on(self):
         return self._on
 
     def status(self):
-        return {"is_on": self._on, "app": "Samsung TV", "volume": None, "reachable": self._on is not None}
+        return {"is_on": self._on, "app": "Samsung TV", "volume": self._vol, "volume_max": 100 if self._vol is not None else None,
+                "reachable": self._on is not None}
+
+    # volume exact via UPnP (port 9197), comme l'app SmartThings
+    def _upnp(self, action, args):
+        body = ('<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+                's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
+                f'<u:{action} xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID>'
+                f'<Channel>Master</Channel>{args}</u:{action}></s:Body></s:Envelope>').encode()
+        req = urllib.request.Request(f"http://{self.info['ip']}:9197/upnp/control/RenderingControl1", data=body, headers={
+            "Content-Type": 'text/xml; charset="utf-8"',
+            "SOAPACTION": f'"urn:schemas-upnp-org:service:RenderingControl:1#{action}"'})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            return r.read().decode(errors="replace")
+
+    def get_volume(self):
+        try:
+            m = re.search(r"<CurrentVolume>(\d+)</CurrentVolume>", self._upnp("GetVolume", ""))
+            self._vol = int(m.group(1)) if m else None
+        except Exception:
+            self._vol = None
+        return self._vol
+
+    async def set_volume(self, level):
+        try:
+            await asyncio.to_thread(self._upnp, "SetVolume", f"<DesiredVolume>{int(level)}</DesiredVolume>")
+            self._vol = int(level); self.on_change(); return True
+        except Exception as e:
+            log.info("volume UPnP indisponible (%s), méthode par touches", e)
+            return False
 
     async def refresh(self):
         def q():
@@ -468,7 +511,10 @@ class SamsungTV:
             except Exception:
                 return False
         new = await asyncio.to_thread(q)
-        if new != self._on:
+        old_vol = self._vol
+        if new:
+            await asyncio.to_thread(self.get_volume)
+        if new != self._on or self._vol != old_vol:
             self._on = new; self.on_change()
 
     def has_token(self):
@@ -492,9 +538,19 @@ class SamsungTV:
         k = KEYS[self.kind][key]
         def op():
             try:
-                self.tv.send_key(k)
+                self.tv.send_key(k); return
             except Exception:
-                self.tv.close(); self.tv.send_key(k)
+                self.tv.close()
+            try:
+                self.tv.send_key(k); return
+            except Exception:
+                self.tv.close()
+            # la TV redemande peut-être l'autorisation (ex. le boîtier a changé de réseau) : on laisse le temps d'accepter
+            self.notify(type="tv_auth", step="accept")
+            t = SamsungTVWS(host=self.info["ip"], port=8002, token_file=self.tv.token_file, name="ATLAS", timeout=45)
+            t.open(); self.tv = t
+            self.notify(type="tv_auth", step="ok")
+            t.send_key(k)
         await asyncio.to_thread(op)
 
     async def power(self, on):
@@ -640,6 +696,7 @@ class Agent:
                     drv = DRIVERS[info["kind"]](info, self.changed)
                     await drv.connect()
                     break
+        drv.notify = lambda **kw: self.event(**kw)
         self.tv = drv
         self.st["active"] = dev_id; self.save(); self.changed()
 
@@ -662,6 +719,8 @@ class Agent:
     async def repair(self):
         s = self.st["settings"]
         self.event(type="repair", step="start")
+        if self.display.running() or (self.cec.available() and self.st.get("box_phys")):
+            await self.tv_release()  # remet la TV sur l'entrée de la box (si photos ou mauvaise entrée HDMI)
         await self.tv.power(True)
         if not await self.wait_on():
             self.event(type="repair", step="error", message="La TV ne s'allume pas"); return
@@ -670,10 +729,12 @@ class Agent:
             await self.tv.press(k); await asyncio.sleep(1.2)
         await self.channel(s.get("fav_channel", 1))
         await asyncio.sleep(2)
-        for _ in range(25):
-            await self.tv.press("vol_down"); await asyncio.sleep(0.12)
-        for _ in range(int(s.get("volume_steps", 12))):
-            await self.tv.press("vol_up"); await asyncio.sleep(0.15)
+        level = int(s.get("volume", s.get("volume_steps", 15)))
+        if not await self.tv.set_volume(level):  # sinon : on descend puis on remonte (volume exact inconnu)
+            for _ in range(25):
+                await self.tv.press("vol_down"); await asyncio.sleep(0.12)
+            for _ in range(level):
+                await self.tv.press("vol_up"); await asyncio.sleep(0.15)
         self.event(type="repair", step="done")
 
     # ---- commandes
@@ -735,7 +796,7 @@ class Agent:
                 self.watch_until = time.time() + int(cmd.get("watch", 0))
                 await self.screen_capture()
             elif a == "settings":
-                self.st["settings"].update({k: v for k, v in cmd.items() if k in ("fav_channel", "volume_steps", "favorites")})
+                self.st["settings"].update({k: v for k, v in cmd.items() if k in ("fav_channel", "volume_steps", "volume", "favorites")})
                 self.save(); self.changed()
             elif not self.tv:
                 raise RuntimeError("Aucune TV associée")
