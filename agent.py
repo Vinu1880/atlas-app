@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.5"
+VERSION = "0.5.1"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -115,6 +115,7 @@ def write_call_unit():
     unit = f"""[Unit]
 Description=ATLAS - appel video sur la TV
 After=systemd-user-sessions.service
+Conflicts=getty@tty7.service
 
 [Service]
 User={kiosk_user()}
@@ -128,6 +129,8 @@ StandardError=journal
 UtmpIdentifier=tty7
 UtmpMode=user
 EnvironmentFile={CALL_ENV}
+ExecStartPre=+/usr/bin/chvt 7
+ExecStopPost=+/usr/bin/chvt 1
 ExecStart=/usr/bin/cage -s -- {browser} --kiosk --incognito --noerrdialogs --disable-infobars --no-first-run --password-store=basic --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --ozone-platform=wayland --enable-features=OverlayScrollbar ${{ATLAS_CALL_URL}}
 Restart=no
 """
@@ -1215,8 +1218,7 @@ class Agent:
     async def call_start(self, call_id, name, auto):
         if self.call:
             await self.call_end()
-        if not CALL_UNIT.exists():
-            await asyncio.to_thread(ensure_deps)
+        await asyncio.to_thread(write_call_unit)
         if not (shutil.which("chromium") or shutil.which("chromium-browser")) or not shutil.which("cage"):
             raise RuntimeError("appel vidéo pas encore prêt (installation du navigateur en cours, réessayez dans 10 min)")
         audio = await asyncio.to_thread(alsa_setup)
