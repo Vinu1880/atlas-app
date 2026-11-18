@@ -685,10 +685,10 @@ else {
       $('#cLocal').srcObject = call.local;
     } catch(e) { cs('Caméra refusée', 'Autorisez la caméra et le micro pour Safari (Réglages iPhone → Safari).', false); call.timers.push(setTimeout(()=>hangup(true), 4000)); return; }
     cs('Allumage de l’écran de la TV…', 'Le boîtier ouvre l’appel (jusqu’à 30 s sur un Pi 3)');
-    const r = await sendWait({action:'call_start', call:call.id, name:$('#callName').value.trim()||'Votre famille', auto:$('#callAuto').checked}, 30000);
+    const r = await sendWait({action:'call_start', call:call.id, name:$('#callName').value.trim()||'Votre famille', auto:$('#callAuto').checked}, 60000);
     if (!call) return;
     if (!r.ok){ cs('Appel impossible', r.message||'', false); call.timers.push(setTimeout(()=>hangup(true), 5000)); return; }
-    call.timers.push(setTimeout(() => { if (call && !call.pc){ cs('La TV ne répond pas', 'L’écran d’appel ne s’est pas ouvert sur la TV.', false); call.timers.push(setTimeout(()=>hangup(true), 4000)); } }, 75000));
+    call.timers.push(setTimeout(() => { if (call && !call.pc){ cs('La TV ne répond pas', 'L’écran d’appel ne s’est pas ouvert sur la TV.', false); call.timers.push(setTimeout(()=>hangup(true), 4000)); } }, 90000));
   }
   async function onTv(m){
     if (!call || m.call !== call.id) return;

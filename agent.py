@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.5.2"
+VERSION = "0.5.4"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -140,19 +140,24 @@ Restart=no
 
 
 def alsa_setup():
-    """Son de l'appel : sortie par la TV (HDMI), micro de la webcam USB."""
+    """Son de l'appel. Priorité : haut-parleur-micro USB (son + micro + anti-écho), sinon TV (HDMI) + micro de la webcam."""
     cards = Path("/proc/asound/cards").read_text() if Path("/proc/asound/cards").exists() else ""
     ids = re.findall(r"^\s*\d+\s+\[(\S+)\s*\]:\s*(.*)$", cards, re.M)
+    usb = [i for i, d in ids if "usb" in d.lower()]
+    play = lambda i: any(Path(f"/proc/asound/{i}").glob("pcm*p"))
+    capt = lambda i: any(Path(f"/proc/asound/{i}").glob("pcm*c"))
+    speaker = next((i for i in usb if play(i) and capt(i)), None)       # ex. Jabra Speak, Anker PowerConf
     hdmi = next((i for i, d in ids if "hdmi" in i.lower() or "hdmi" in d.lower()), None)
-    mic = next((i for i, d in ids if "usb" in d.lower() or "camera" in d.lower() or "webcam" in d.lower()), None)
-    if not hdmi:
-        return {"hdmi": None, "mic": mic}
+    mic = speaker or next((i for i in usb if capt(i)), None)              # sinon le micro de la webcam
+    out = f"plughw:CARD={speaker},DEV=0" if speaker else (f"hdmi:CARD={hdmi},DEV=0" if hdmi else None)
+    if not out:
+        return {"out": None, "mic": mic}
     conf = "pcm.!default {\n type asym\n playback.pcm \"atlas_out\"\n capture.pcm \"atlas_in\"\n}\n"
-    conf += f"pcm.atlas_out {{\n type plug\n slave.pcm \"hdmi:CARD={hdmi},DEV=0\"\n}}\n"
+    conf += f"pcm.atlas_out {{\n type plug\n slave.pcm \"{out}\"\n}}\n"
     conf += f"pcm.atlas_in {{\n type plug\n slave.pcm \"{'hw:CARD=' + mic + ',DEV=0' if mic else 'null'}\"\n}}\n"
-    conf += f"ctl.!default {{\n type hw\n card {hdmi}\n}}\n"
+    conf += f"ctl.!default {{\n type hw\n card {speaker or hdmi}\n}}\n"
     Path("/etc/asound.conf").write_text(conf)
-    return {"hdmi": hdmi, "mic": mic}
+    return {"out": "haut-parleur USB " + speaker if speaker else "TV (HDMI)", "mic": mic}
 
 
 def webcam_present():
@@ -198,6 +203,11 @@ class CEC:
     def init(self):
         if self.available():
             self._c("--playback", "-o", "ATLAS")
+
+    def my_phys(self):
+        """Adresse HDMI du boîtier, lecture rapide (sans interroger tous les appareils)."""
+        m = re.search(r"Physical Address\s*:\s*([0-9a-f.]+)", self._c(timeout=6))
+        return m.group(1) if m else None
 
     def info(self):
         """Adresse HDMI du boîtier + autres appareils (box) vus sur le bus."""
@@ -784,7 +794,8 @@ class Agent:
                   "slideshow": {**self.st["slideshow"], "running": self.display.what == "slideshow" and self.display.running(),
                                 "until": int(self.slide_until)},
                   "net": self.net_info,
-                  "call": {"active": bool(self.call), "webcam": webcam_present()},
+                  "call": {"active": bool(self.call), "webcam": webcam_present(),
+                           "speaker": bool(re.search(r"USB-Audio", Path("/proc/asound/cards").read_text() if Path("/proc/asound/cards").exists() else ""))},
                   "pairing": self.pairing and {"id": self.pairing["info"]["id"], "step": self.pairing["step"]}}
             self.mq.publish(f"{self.base}/state", json.dumps(st), qos=1, retain=True)
 
@@ -1016,7 +1027,10 @@ class Agent:
 
     async def tv_show(self, path_or_none=None, what="screen"):
         if self.cec.available() and not self.hdmi["phys"]:
-            await self.hdmi_refresh()
+            await asyncio.to_thread(self.cec.init)
+            self.hdmi["phys"] = await asyncio.to_thread(self.cec.my_phys)
+            if not self.hdmi["phys"]:
+                asyncio.create_task(self.hdmi_refresh())
         if self.cec.available():
             if not self.display.running():  # retenir ce que regardait la TV, pour y revenir ensuite
                 try:
@@ -1232,11 +1246,16 @@ class Agent:
         audio = await asyncio.to_thread(alsa_setup)
         log.info("appel %s de %s (son %s)", call_id, name, audio)
         self.display.stop()
-        await self.tv_show()  # la TV bascule sur le boîtier
         CALL_ENV.write_text('ATLAS_CALL_URL="' + self.call_url(call_id, name, auto) + '"\n')
-        await asyncio.to_thread(subprocess.run, ["systemctl", "restart", "atlas-call.service"], timeout=30)
+        await asyncio.to_thread(subprocess.run, ["systemctl", "restart", "--no-block", "atlas-call.service"], timeout=30)
         self.call = {"id": call_id, "since": time.time()}
-        self.cec_keys.start()
+        async def switch():  # pendant que le navigateur démarre, la TV bascule sur le boîtier
+            try:
+                await self.tv_show()
+            except Exception as e:
+                log.warning("bascule TV: %s", e)
+            self.cec_keys.start()
+        asyncio.create_task(switch())
         self.changed()
         return audio
 
