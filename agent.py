@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -1021,25 +1021,33 @@ class Agent:
             if not self.display.running():  # retenir ce que regardait la TV, pour y revenir ensuite
                 try:
                     prev = await asyncio.to_thread(self.cec.current_source)
+                    log.info("source active avant affichage : %s (boîtier %s)", prev, self.hdmi["phys"])
                     if prev != self.hdmi["phys"]:
                         self.prev_source = prev
+                        self.st["last_source"] = prev; self.save()  # mémoire durable de la dernière vraie source
                 except Exception as e:
                     log.info("source active inconnue: %s", e)
             await asyncio.to_thread(self.cec.show_me, self.hdmi["phys"])
         if path_or_none:
             self.display.image(path_or_none, what)
 
-    async def tv_release(self):
+    async def tv_release(self, repeat=False):
         self.display.stop(); self.slide_until = 0
         target = self.prev_source if self.prev_source not in (None, self.hdmi.get("phys")) else None
+        if target is None and self.st.get("last_source") not in (None, self.hdmi.get("phys")):
+            target = self.st["last_source"]  # la TV était déjà sur le boîtier : on revient à la dernière vraie source
         if target in (None, "0.0.0.0") and self.st.get("box_phys"):
             target = self.st["box_phys"]
         log.info("retour TV : source %s", target or "tuner")
         if self.cec.available():
             await asyncio.to_thread(self.cec.give_back, self.hdmi["phys"], target)
+            if repeat and target not in (None, "0.0.0.0"):
+                await asyncio.sleep(3); await asyncio.to_thread(self.cec.give_back, self.hdmi["phys"], target)
         if target in (None, "0.0.0.0") and self.tv and self.tv.kind == "samsung":
             try:
                 await self.tv.press("tv")  # Samsung : revenir sur la TV (tuner) par le réseau
+                if repeat:  # après un appel, l'écran du Pi se réinitialise et la TV peut rebasculer dessus
+                    await asyncio.sleep(3); await self.tv.press("tv")
             except Exception as e:
                 log.info("retour TV Samsung: %s", e)
         self.prev_source = None
@@ -1238,7 +1246,9 @@ class Agent:
         was = bool(self.call)
         self.call = None
         if was:
-            await self.tv_release()
+            await asyncio.sleep(3)  # laisse l'écran du Pi se réinitialiser avant de rendre la main
+            await self.tv_release(repeat=True)
+            log.info("appel terminé, retour à la TV")
         self.changed()
 
     async def call_guard(self):
