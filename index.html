@@ -58,6 +58,12 @@ button.flash-err{background:var(--bad)!important;color:#fff!important}
 .focus{font-weight:700;font-size:17px;margin:2px 0 4px}
 button.on{background:var(--acc);color:#fff}
 ol{padding-left:20px;margin:8px 0}
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.thumbs div{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--key)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.thumbs button{position:absolute;top:4px;right:4px;width:28px;height:28px;min-height:0;padding:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px}
+select{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.chk{display:flex;gap:10px;align-items:center;margin:10px 0}.chk input{width:22px;height:22px}
 </style>
 </head>
 <body>
@@ -112,6 +118,23 @@ ol{padding-left:20px;margin:8px 0}
   <div class="card"><button class="big" data-a="repair">🔧 Réparer la télé</button>
     <p class="mute" style="margin:10px 2px 0">Allume la TV, sort des menus, remet la chaîne <span id="favCh">1</span> et un volume normal.</p></div>
 
+  <div class="card" id="photoCard">
+    <h2>📷 Photos sur la TV</h2>
+    <div id="hdmiWarn" class="banner err hide"><span class="ico">🔌</span><span>Câble HDMI du boîtier non détecté. Branchez-le sur une entrée libre de la TV (et activez Anynet+/HDMI-CEC sur la TV) pour que la TV bascule toute seule.</span></div>
+    <div id="slideState" class="mute" style="margin-bottom:10px"></div>
+    <div class="grid g2"><button class="primary" id="slideGo">▶ Lancer le diaporama</button><button id="slideStop">⏹ Revenir à la TV</button></div>
+    <button id="phAdd" style="margin-top:10px">➕ Ajouter des photos</button>
+    <input type="file" id="phInput" accept="image/*" multiple class="hide">
+    <div id="upProg" class="hide" style="margin-top:10px"><div class="mute" id="upTxt"></div><div class="progress"><i></i></div></div>
+    <div class="thumbs" id="thumbs"></div>
+    <details style="margin-top:12px"><summary>Options du diaporama</summary>
+      <div class="grid" style="margin-top:10px">
+        <label class="mute">Durée par photo<select id="slSec"><option value="5">5 s</option><option value="8">8 s</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option></select></label>
+        <label class="mute">Arrêt automatique (retour à la TV)<select id="slMin"><option value="10">après 10 min</option><option value="30">après 30 min</option><option value="60">après 1 h</option><option value="0">jamais</option></select></label>
+        <label class="chk"><input type="checkbox" id="slShuf"> Ordre aléatoire</label>
+      </div></details>
+  </div>
+
   <div class="card grid g2">
     <button data-a="power" data-on="1">⏻ Allumer</button>
     <button data-a="power" data-on="0">Éteindre</button>
@@ -149,6 +172,10 @@ ol{padding-left:20px;margin:8px 0}
         <button class="primary" id="saveSet">Enregistrer</button>
         <button id="rescan">Changer de TV</button>
         <button id="updBtn">⬇ Mettre à jour le boîtier</button>
+        <p class="mute" id="netInfo" style="margin:4px 0 0"></p>
+        <button id="wifiBtn">📶 Changer le Wi-Fi du boîtier</button>
+        <button id="qrBtn">🔳 Afficher le QR code de l'app sur la TV</button>
+        <label class="mute">Entrée HDMI de la box (pour revenir après les photos)<select id="boxIn"></select></label>
         <p class="mute" id="info"></p>
       </div>
     </details>
@@ -204,6 +231,7 @@ else {
     else if (t==='state') { try{ state = JSON.parse(s); }catch(e){} render(); }
     else if (t==='event') { try{ onEvent(JSON.parse(s)); }catch(e){} }
     else if (t==='screen') { try{ showScreen(JSON.parse(s)); }catch(e){} }
+    else if (t==='photos') { try{ showPhotos(JSON.parse(s)); }catch(e){} }
   });
 
   function setConn(){
@@ -233,6 +261,15 @@ else {
     const sc = state.screen || {};
     $('#screenCard').classList.toggle('hide', !sc.supported);
     $('#scrOff').classList.toggle('hide', !!sc.enabled); $('#scrOn').classList.toggle('hide', !sc.enabled);
+    const hd = state.hdmi || {}, sl = state.slideshow || {};
+    $('#hdmiWarn').classList.toggle('hide', !!hd.cec);
+    $('#slideState').innerHTML = sl.running ? `<b style="color:var(--ok)">● Diaporama en cours sur la TV</b>${sl.until? ' · retour à la TV à '+new Date(sl.until*1000).toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'}):''}`
+      : hd.showing==='setup' ? 'La TV affiche l’écran d’installation Wi-Fi.' : hd.showing==='pair_qr' ? 'La TV affiche le QR code de l’app.' : 'Ajoutez des photos puis lancez le diaporama.';
+    if (document.activeElement.tagName!=='SELECT'){ $('#slSec').value=String(sl.seconds??8); $('#slMin').value=String(sl.minutes??30); $('#slShuf').checked=sl.shuffle!==false;
+      $('#boxIn').innerHTML = `<option value="">Automatique</option>` + (hd.devices||[]).map(d=>`<option value="${d.phys}">${esc(d.name||d.type)} (${d.phys})</option>`).join('');
+      $('#boxIn').value = hd.box || ''; }
+    const net = state.net || {};
+    $('#netInfo').textContent = net.ethernet ? 'Connexion du boîtier : câble réseau' : net.wifi ? 'Connexion du boîtier : Wi-Fi « '+net.wifi+' »' : '';
     const dev = (state.devices||[]).find(d=>d.id===state.active);
     $('#info').textContent = dev ? `TV : ${dev.name} (${dev.kind}, ${dev.ip}) · agent ${state.agent}` : '';
   }
@@ -246,6 +283,30 @@ else {
     return a.split('.').slice(-1)[0];
   }
 
+  function showPhotos(d){
+    const items=d.items||[];
+    $('#thumbs').innerHTML = items.slice().reverse().map(p=>`<div>${p.thumb?`<img src="data:image/jpeg;base64,${p.thumb}" alt="">`:''}<button data-del="${p.id}" aria-label="Supprimer">✕</button></div>`).join('');
+    $('#slideGo').disabled = !items.length;
+  }
+  const waiters={};
+  const sendWait = (o, ms=45000) => new Promise((res)=>{ const cid=send(o); if(!cid) return res({ok:false,message:'hors ligne'}); waiters[cid]=res; setTimeout(()=>{ if(waiters[cid]){ delete waiters[cid]; res({ok:false,message:'pas de réponse'}); } }, ms); });
+  async function prepPhoto(file){
+    let bmp; try{ bmp = await createImageBitmap(file); }catch(e){ bmp = await new Promise((r,j)=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=j; i.src=URL.createObjectURL(file); }); }
+    const W=bmp.width, H=bmp.height, k=Math.min(1, 1920/W, 1080/H);
+    const c=document.createElement('canvas'); c.width=Math.round(W*k); c.height=Math.round(H*k); c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+    let q=0.85, url=c.toDataURL('image/jpeg', q);
+    while (url.length > 900000 && q > 0.4){ q-=0.15; url=c.toDataURL('image/jpeg', q); }
+    return url.split(',')[1];
+  }
+  async function uploadPhotos(files){
+    const box=$('#upProg'); box.classList.remove('hide'); let ok=0;
+    for (let i=0;i<files.length;i++){
+      $('#upTxt').textContent = `Envoi de la photo ${i+1} sur ${files.length}…`;
+      try{ const data=await prepPhoto(files[i]); const r=await sendWait({action:'photo_add', data}); if(r.ok) ok++; else toast('⚠️ '+(r.message||'échec')); }
+      catch(e){ toast('⚠️ Photo illisible : '+files[i].name); }
+    }
+    box.classList.add('hide'); toast(`✅ ${ok} photo(s) ajoutée(s)`);
+  }
   let lastShot=0, live=false, liveT=null, liveEnd=0;
   function showScreen(d){
     if(!d.img) return;
@@ -274,6 +335,9 @@ else {
       if (e.step==='download') toast('⬇ Téléchargement de la mise à jour…', 4000);
       if (e.step==='restart'){ toast('✅ Version '+e.version+' installée, redémarrage du boîtier…', 5000); unbusy($('#updBtn')); }
     }
+    if (e.type==='ack' && waiters[e.cid]){ waiters[e.cid](e); delete waiters[e.cid]; }
+    if (e.type==='slideshow' && e.step==='ended') toast('Diaporama terminé, retour à la TV');
+    if (e.type==='hdmi' && e.raw) console.log(e.raw);
     if (e.type==='ack'){ const b=pending[e.cid]; if(b){ delete pending[e.cid]; if(b.dataset.k||b.dataset.ch||b.dataset.a==='power') flash(b, e.ok); else b.classList.remove('chosen'); }
       if(!e.ok && e.message) toast('⚠️ '+e.message, 3500); }
     if (e.type==='scan'){
@@ -306,6 +370,7 @@ else {
     else if (b.dataset.a==='repair'){ if(send({action:'repair'})) busy(b,'Envoi…'); }
     else if (b.dataset.a==='power') send({action:'power', on: b.dataset.on==='1'}, b);
     else if (b.dataset.ch) { send({action:'channel', number:+b.dataset.ch}, b); toast('Chaîne '+b.dataset.ch); }
+    else if (b.dataset.del){ if(confirm('Supprimer cette photo ?')) send({action:'photo_del', id:b.dataset.del}); }
     else if (b.dataset.pair){ if(send({action:'pair_start', device:b.dataset.pair})){
         document.querySelectorAll('[data-pair]').forEach(x=>x.classList.add('busy')); b.classList.add('chosen'); busy(b,'Connexion à cette TV…');
         banner('wait','<span class="spin"></span>','Demande envoyée à la TV…'); expect('La TV ne répond pas. Vérifiez qu’elle est allumée et réessayez.', 50000); } }
@@ -317,6 +382,14 @@ else {
     const favorites = $('#setFavs').value.split(',').map(x=>x.split('=')).filter(x=>x.length===2 && +x[0]>0).map(([n,name])=>({n:+n.trim(), name:name.trim()}));
     send({action:'settings', fav_channel:+$('#setFav').value||1, volume_steps:+$('#setVol').value||12, favorites}); toast('Réglages enregistrés');
   };
+  const slOpts = () => ({seconds:+$('#slSec').value, minutes:+$('#slMin').value, shuffle:$('#slShuf').checked});
+  $('#slideGo').onclick = async () => { const b=$('#slideGo'); busy(b,'Lancement…'); const r=await sendWait({action:'slideshow_start', ...slOpts()}); unbusy(b); toast(r.ok?'▶ Diaporama lancé sur la TV':'⚠️ '+(r.message||'échec'), 3500); };
+  $('#slideStop').onclick = async () => { const b=$('#slideStop'); busy(b,'Retour…'); await sendWait({action:'slideshow_stop'}); unbusy(b); toast('Retour à la TV'); };
+  $('#phAdd').onclick = () => $('#phInput').click();
+  $('#phInput').onchange = (e) => { const f=[...e.target.files]; e.target.value=''; if(f.length) uploadPhotos(f); };
+  $('#wifiBtn').onclick = () => { if(confirm('Le boîtier va se déconnecter et afficher les instructions sur la TV. Il faut être devant la TV. Continuer ?')) send({action:'wifi_setup'}); };
+  $('#qrBtn').onclick = () => { send({action:'show_qr', minutes:5}); toast('QR code affiché sur la TV pendant 5 min'); };
+  $('#boxIn').onchange = () => send({action:'set_box_input', phys:$('#boxIn').value});
   $('#scrEnable').onclick = () => { if(send({action:'screen_enable'})){ busy($('#scrEnable'),'Activation…'); scrBanner('wait','<span class="spin"></span>','Demande envoyée…'); } };
   $('#scrShot').onclick = () => { if(send({action:'screen', watch: live?120:0})) busy($('#scrShot'),'Capture…'); };
   $('#scrLive').onclick = () => setLive(!live);

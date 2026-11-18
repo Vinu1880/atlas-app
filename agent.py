@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""ATLAS TV - agent v0.2 (prototype)
+"""ATLAS TV - agent v0.3 (prototype)
 Se connecte tout seul au serveur MQTT, trouve la TV sur le réseau local,
 gère l'appairage et exécute les commandes envoyées par l'app.
 """
-import asyncio, base64, io, json, logging, os, re, shutil, socket, ssl, subprocess, sys, time, urllib.parse, urllib.request
+import asyncio, base64, html, io, json, logging, os, random, re, secrets, shutil, socket, ssl, subprocess, sys, threading, time, urllib.parse, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.2"
+VERSION = "0.3"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -64,15 +65,245 @@ def http_json(url, timeout=3):
 def ensure_deps():
     """Installe ce qui manque (utile après une mise à jour à distance)."""
     try:
-        if not shutil.which("adb"):
-            subprocess.run(["apt-get", "install", "-y", "-q", "adb"], timeout=600,
+        need = [p for p, b in (("adb", "adb"), ("mpv", "mpv"), ("v4l-utils", "cec-ctl")) if not shutil.which(b)]
+        if not Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").exists():
+            need.append("fonts-dejavu-core")
+        if not shutil.which("dnsmasq"):
+            need.append("dnsmasq-base")  # nécessaire au Wi-Fi « ATLAS-Setup »
+        if need:
+            log.info("installation de %s", need)
+            subprocess.run(["apt-get", "install", "-y", "-q", *need], timeout=1200,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        try:
-            import PIL  # noqa
-        except ImportError:
-            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "pillow"], timeout=600)
+        for mod, pkg in (("PIL", "pillow"), ("qrcode", "qrcode")):
+            try:
+                __import__(mod)
+            except ImportError:
+                subprocess.run([sys.executable, "-m", "pip", "install", "-q", pkg], timeout=900)
+        if shutil.which("raspi-config"):  # le Wi-Fi du Pi reste bloqué tant que le pays n'est pas réglé
+            subprocess.run(["raspi-config", "nonint", "do_wifi_country", "CH"], timeout=60,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["rfkill", "unblock", "wifi"], timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cfg = Path("/boot/firmware/config.txt")  # le Pi ne doit pas voler l'entrée HDMI au démarrage
+        if cfg.exists() and "hdmi_ignore_cec_init" not in cfg.read_text():
+            with cfg.open("a") as f:
+                f.write("\n# ATLAS\nhdmi_ignore_cec_init=1\nhdmi_force_hotplug=1\n")
     except Exception as e:
         log.warning("installation des dépendances: %s", e)
+
+
+# --------------------------------------------------------------- HDMI : CEC (bascule d'entrée)
+class CEC:
+    DEV = "/dev/cec0"
+
+    def available(self):
+        return Path(self.DEV).exists() and shutil.which("cec-ctl") is not None
+
+    def _c(self, *a, timeout=8):
+        return run(["cec-ctl", "-d", self.DEV, *a], timeout)
+
+    def init(self):
+        if self.available():
+            self._c("--playback", "-o", "ATLAS")
+
+    def info(self):
+        """Adresse HDMI du boîtier + autres appareils (box) vus sur le bus."""
+        out = self._c("--show-topology", timeout=25)
+        head = out.split("System Information", 1)[0]
+        m = re.search(r"Physical Address\s*:\s*([0-9a-f.]+)", head)
+        me = m.group(1) if m else None
+        devs = []
+        for sec in out.split("System Information for device")[1:]:
+            pa = re.search(r"Physical Address\s*:\s*([0-9a-f.]+)", sec)
+            nm = re.search(r"OSD Name\s*:\s*'?([^'\n]*)'?", sec)
+            la = re.match(r"\s*(\d+)\s*\(([^)]*)\)", sec)
+            if pa:
+                devs.append({"la": int(la.group(1)) if la else None, "type": la.group(2) if la else "",
+                             "phys": pa.group(1), "name": (nm.group(1).strip() if nm else "")})
+        return me, devs, out[-1500:]
+
+    def show_me(self, phys):
+        self._c("--to", "0", "--image-view-on")
+        time.sleep(0.5)
+        if phys and phys != "f.f.f.f":
+            self._c("--active-source", f"phys-addr={phys}")
+
+    def give_back(self, phys, target=None):
+        if target:
+            self._c("--set-stream-path", f"phys-addr={target}")
+        elif phys:
+            self._c("--inactive-source", f"phys-addr={phys}")
+
+
+# --------------------------------------------------------------- HDMI : affichage (photos, écrans d'installation)
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONTB = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+class Display:
+    def __init__(self):
+        self.proc = None
+        self.what = None
+
+    def _start(self, args):
+        self.stop()
+        if not shutil.which("mpv"):
+            raise RuntimeError("affichage HDMI pas encore prêt (installation de mpv en cours)")
+        logf = open(DATA / "mpv.log", "w")
+        self.proc = subprocess.Popen(["mpv", "--vo=drm", "--fs", "--no-audio", "--no-osc", "--no-terminal",
+                                      "--osd-level=0", *args], stdout=logf, stderr=logf)
+        time.sleep(1.5)
+        if self.proc.poll() is not None:
+            err = (DATA / "mpv.log").read_text()[-300:]
+            self.proc = None
+            raise RuntimeError("affichage HDMI impossible (câble HDMI branché ?) " + err.strip().splitlines()[-1:][0] if err.strip() else "affichage HDMI impossible (câble HDMI branché ?)")
+
+    def image(self, path, what="screen"):
+        self._start(["--image-display-duration=inf", "--loop-file=inf", str(path)]); self.what = what
+
+    def slideshow(self, files, seconds, shuffle):
+        files = list(files)
+        if shuffle:
+            random.shuffle(files)
+        lst = DATA / "playlist.txt"; lst.write_text("\n".join(str(f) for f in files))
+        self._start([f"--image-display-duration={seconds}", "--loop-playlist=inf", f"--playlist={lst}"])
+        self.what = "slideshow"
+
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(5)
+            except Exception:
+                self.proc.kill()
+        self.proc = None; self.what = None
+
+
+def render_screen(title, lines=(), qrs=(), color=(31, 111, 139)):
+    """Fabrique une image 1920x1080 (titre, textes à gauche, QR codes à droite) à afficher sur la TV."""
+    from PIL import Image, ImageDraw, ImageFont
+    import qrcode
+    W, H = 1920, 1080
+    im = Image.new("RGB", (W, H), (14, 26, 34)); d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, W, 14), fill=color)
+    fb = ImageFont.truetype(FONTB, 72); f = ImageFont.truetype(FONT, 40); fs = ImageFont.truetype(FONT, 32)
+    d.text((110, 80), "ATLAS TV", font=ImageFont.truetype(FONTB, 38), fill=(120, 190, 215))
+    d.text((110, 140), title, font=fb, fill=(255, 255, 255))
+    qrs = list(qrs)
+    maxw = (W - 220) if not qrs else (W - 110 - len(qrs) * 440 - 60)
+    y = 300
+    for ln in lines:
+        words, cur = ln.split(" "), ""
+        indent = len(ln) - len(ln.lstrip(" "))
+        for w in words:
+            t = (cur + " " + w).strip() if cur else w
+            if d.textlength(t, font=f) > maxw and cur:
+                d.text((110, y), cur, font=f, fill=(215, 228, 236)); y += 58; cur = " " * indent + w
+            else:
+                cur = t if not cur else cur + " " + w
+        d.text((110, y), cur, font=f, fill=(215, 228, 236)); y += 62
+    x = W - 110
+    for label, data in reversed(qrs):
+        q = qrcode.QRCode(border=2, box_size=10); q.add_data(data); q.make(fit=True)
+        img = q.make_image(fill_color="black", back_color="white").convert("RGB").resize((380, 380))
+        x -= 380
+        im.paste(img, (x, 300))
+        d.text((x + 190 - d.textlength(label, font=fs) / 2, 700), label, font=fs, fill=(255, 255, 255))
+        x -= 60
+    p = DATA / "screen.png"; im.save(p); return p
+
+
+# --------------------------------------------------------------- Wi-Fi : mode installation « ATLAS-Setup »
+class WiFi:
+    CON = "atlas-setup"
+
+    def nm(self, *a, timeout=30):
+        r = subprocess.run(["nmcli", *a], capture_output=True, text=True, timeout=timeout)
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    def current(self):
+        rc, out = self.nm("-t", "-f", "TYPE,STATE,CONNECTION", "device")
+        res = {}
+        for ln in out.splitlines():
+            t, st, con = (ln.split(":") + ["", "", ""])[:3]
+            if st == "connected" and con != self.CON and t in ("ethernet", "wifi"):
+                res[t] = con
+        return res  # ex. {"ethernet": "Wired connection 1", "wifi": "MaMaison"}
+
+    def scan(self):
+        self.nm("device", "wifi", "rescan", timeout=20); time.sleep(3)
+        rc, out = self.nm("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list")
+        nets = {}
+        for ln in out.splitlines():
+            parts = re.split(r"(?<!\\):", ln)
+            if len(parts) >= 3 and parts[0]:
+                ssid = parts[0].replace("\\:", ":")
+                sig = int(parts[1] or 0)
+                if ssid not in nets or nets[ssid]["signal"] < sig:
+                    nets[ssid] = {"ssid": ssid, "signal": sig, "secure": parts[2] not in ("", "--")}
+        return sorted(nets.values(), key=lambda n: -n["signal"])
+
+    def start_hotspot(self, ssid, pw):
+        self.nm("connection", "delete", self.CON)
+        rc, out = self.nm("device", "wifi", "hotspot", "ifname", "wlan0", "con-name", self.CON, "ssid", ssid, "password", pw)
+        self.nm("connection", "modify", self.CON, "connection.autoconnect", "no")
+        if rc:
+            raise RuntimeError(out)
+
+    def stop_hotspot(self):
+        self.nm("connection", "down", self.CON)
+
+    def connect(self, ssid, pw):
+        self.stop_hotspot(); time.sleep(2)
+        self.nm("device", "wifi", "rescan", timeout=20); time.sleep(4)
+        args = ["device", "wifi", "connect", ssid, "ifname", "wlan0"] + (["password", pw] if pw else [])
+        rc, out = self.nm(*args, timeout=60)
+        return rc == 0, out
+
+
+PORTAL = """<!doctype html><html lang=fr><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>ATLAS - Wi-Fi</title><style>body{{font:17px -apple-system,Segoe UI,sans-serif;margin:0;padding:24px 18px;background:#f3f6f8;color:#14212b}}
+h1{{font-size:24px}}.c{{background:#fff;border-radius:16px;padding:18px;border:1px solid #dde5ea}}label{{display:block;margin:14px 0 6px;color:#61717d}}
+select,input{{font:inherit;width:100%;padding:14px;border-radius:12px;border:1px solid #cdd8df;box-sizing:border-box}}
+button{{font:inherit;font-weight:700;width:100%;padding:16px;border:0;border-radius:14px;background:#1f6f8b;color:#fff;margin-top:18px}}</style>
+<h1>Connecter ATLAS au Wi-Fi</h1><div class=c>{body}</div></html>"""
+
+
+class Portal(BaseHTTPRequestHandler):
+    agent = None
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, body):
+        b = PORTAL.format(body=body).encode()
+        self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+
+    def do_GET(self):
+        nets = self.agent.wifi_nets
+        opts = "".join(f'<option value="{html.escape(n["ssid"], True)}">{html.escape(n["ssid"])} '
+                       f'({n["signal"]}%)</option>' for n in nets)
+        self._send(f"""<form method=post action=/connect><label>Réseau Wi-Fi de la maison</label>
+<select name=ssid>{opts}<option value="">Autre (taper le nom)…</option></select>
+<label>…ou nom du réseau</label><input name=ssid2 autocapitalize=none autocomplete=off placeholder="si absent de la liste">
+<label>Mot de passe Wi-Fi</label><input name=pw type=password autocomplete=off>
+<button>Connecter</button></form>""")
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        q = urllib.parse.parse_qs(self.rfile.read(n).decode())
+        ssid = (q.get("ssid2", [""])[0] or q.get("ssid", [""])[0]).strip()
+        pw = q.get("pw", [""])[0]
+        if not ssid:
+            return self.do_GET()
+        self._send("<p><b>Connexion en cours…</b></p><p>Regardez la TV : elle affichera le résultat dans quelques secondes.</p>"
+                   "<p>Votre téléphone va se déconnecter du Wi-Fi ATLAS, c'est normal.</p>")
+        self.agent.loop.call_soon_threadsafe(self.agent.queue.put_nowait,
+                                              json.dumps({"action": "_wifi_join", "ssid": ssid, "pw": pw,
+                                                          "k": self.agent.conf["device_key"]}).encode())
 
 
 # --------------------------------------------------------------- vue écran (ADB, box Android)
@@ -309,6 +540,14 @@ class Agent:
         self.st.setdefault("settings", {"fav_channel": 1, "volume_steps": 12, "favorites": []})
         self.st.setdefault("last_channel", None)
         self.tv = None
+        self.cec = CEC(); self.display = Display(); self.wifi = WiFi()
+        self.hdmi = {"cec": False, "phys": None, "devices": []}
+        self.wifi_nets = []; self.setup_mode = False; self.portal = None
+        self.slide_until = 0
+        self.photos_dir = DATA / "photos"
+        self.st.setdefault("slideshow", {"seconds": 8, "shuffle": True, "minutes": 30})
+        self.mq_ok = False
+        self.net_info = {}
         self.screen = None
         self.watch_until = 0
         self._shot_task = None
@@ -331,6 +570,7 @@ class Agent:
         cl.will_set(f"{self.base}/online", "0", qos=1, retain=True)
         cl.reconnect_delay_set(2, 60)
         cl.on_connect = self._on_connect
+        cl.on_disconnect = lambda *_a: setattr(self, "mq_ok", False)
         cl.on_message = lambda _c, _u, m: self.loop.call_soon_threadsafe(self.queue.put_nowait, m.payload)
         cl.connect_async(c["mqtt_host"], int(c.get("mqtt_port", 8883)), keepalive=30)
         cl.loop_start()
@@ -338,6 +578,7 @@ class Agent:
 
     def _on_connect(self, cl, _u, _f, rc, _p):
         log.info("MQTT connecté (%s)", rc)
+        self.mq_ok = not rc.is_failure
         cl.subscribe(f"{self.base}/cmd", qos=1)
         cl.publish(f"{self.base}/online", "1", qos=1, retain=True)
         self.loop.call_soon_threadsafe(self._dirty.set)
@@ -361,6 +602,11 @@ class Agent:
                   "active": self.st["active"], "settings": self.st["settings"],
                   "last_channel": self.st["last_channel"], "tv": self.tv.status() if self.tv else None,
                   "screen": {"supported": bool(self.tv and self.tv.kind == "androidtv"), "enabled": bool(self.st.get("screen"))},
+                  "hdmi": {"cec": self.hdmi["cec"], "phys": self.hdmi["phys"], "box": self.st.get("box_phys"),
+                           "devices": self.hdmi["devices"], "showing": self.display.what if self.display.running() else None},
+                  "slideshow": {**self.st["slideshow"], "running": self.display.what == "slideshow" and self.display.running(),
+                                "until": int(self.slide_until)},
+                  "net": self.net_info,
                   "pairing": self.pairing and {"id": self.pairing["info"]["id"], "step": self.pairing["step"]}}
             self.mq.publish(f"{self.base}/state", json.dumps(st), qos=1, retain=True)
 
@@ -445,6 +691,26 @@ class Agent:
             elif a == "forget":
                 self.st["devices"].pop(cmd.get("device") or self.st["active"], None)
                 self.st["active"] = None; self.tv = None; self.save(); self.changed()
+            elif a == "_wifi_join":
+                await self.wifi_join(cmd["ssid"], cmd.get("pw", ""))
+            elif a == "wifi_setup":
+                self.event(type="ack", cid=cid, ok=True)
+                await asyncio.sleep(2); await self.setup_start(); return
+            elif a == "show_qr":
+                await self.show_pair_qr(int(cmd.get("minutes", 5)))
+            elif a == "photo_add":
+                await self.photo_add(cmd["data"])
+            elif a == "photo_del":
+                self.photo_del(cmd["id"])
+            elif a == "slideshow_start":
+                await self.slideshow_start(cmd)
+            elif a in ("slideshow_stop", "tv_release"):
+                await self.tv_release()
+            elif a == "hdmi_refresh":
+                await self.hdmi_refresh()
+                self.event(type="hdmi", raw=self.hdmi.get("raw", ""))
+            elif a == "set_box_input":
+                self.st["box_phys"] = cmd.get("phys") or None; self.save()
             elif a == "update":
                 await self.update()
             elif a == "screen_enable":
@@ -542,6 +808,162 @@ class Agent:
                 await asyncio.sleep(1.3); await self.screen_capture()
             self._shot_task = asyncio.create_task(later())
 
+    # ---- HDMI / CEC
+    async def hdmi_refresh(self):
+        if not self.cec.available():
+            self.hdmi["cec"] = False; return
+        await asyncio.to_thread(self.cec.init)
+        me, devs, raw = await asyncio.to_thread(self.cec.info)
+        others = [d for d in devs if d["phys"] not in (me, "0.0.0.0") and d["phys"] != "f.f.f.f"]
+        self.hdmi.update(cec=True, phys=me, devices=others, raw=raw)
+        if not self.st.get("box_phys") and len(others) == 1:
+            self.st["box_phys"] = others[0]["phys"]; self.save()
+        self.changed()
+
+    async def tv_show(self, path_or_none=None, what="screen"):
+        if self.cec.available() and not self.hdmi["phys"]:
+            await self.hdmi_refresh()
+        if self.cec.available():
+            await asyncio.to_thread(self.cec.show_me, self.hdmi["phys"])
+        if path_or_none:
+            self.display.image(path_or_none, what)
+
+    async def tv_release(self):
+        self.display.stop(); self.slide_until = 0
+        if self.cec.available():
+            await asyncio.to_thread(self.cec.give_back, self.hdmi["phys"], self.st.get("box_phys"))
+        self.changed()
+
+    def app_link(self):
+        c = self.conf
+        q = urllib.parse.urlencode({"h": c["mqtt_host"], "port": c.get("ws_port", 8084), "u": c["mqtt_user"],
+                                    "p": c["mqtt_pass"], "d": c["device_id"], "k": c["device_key"]})
+        return c["app_url"].split("#")[0] + "#" + q
+
+    async def show_pair_qr(self, minutes=5):
+        p = await asyncio.to_thread(render_screen, "Installez la télécommande ATLAS",
+                                    ["1. Ouvrez l'appareil photo de votre téléphone", "2. Visez le QR code à droite",
+                                     "3. Touchez le lien qui apparaît", "", "Cet écran se fermera tout seul."],
+                                    [("Télécommande ATLAS", self.app_link())])
+        await self.tv_show(p, "pair_qr")
+        async def close():
+            await asyncio.sleep(minutes * 60)
+            if self.display.what == "pair_qr":
+                await self.tv_release()
+        asyncio.create_task(close())
+
+    # ---- photos / diaporama
+    def photos(self):
+        self.photos_dir.mkdir(parents=True, exist_ok=True)
+        return sorted(self.photos_dir.glob("*.jpg"))
+
+    def publish_photos(self):
+        items = []
+        for f in self.photos():
+            t = f.with_suffix(".thumb")
+            items.append({"id": f.stem, "thumb": t.read_text() if t.exists() else ""})
+        self.mq.publish(f"{self.base}/photos", json.dumps({"items": items}), qos=1, retain=True)
+
+    async def photo_add(self, data):
+        from PIL import Image, ImageOps
+        raw = base64.b64decode(data)
+        def work():
+            im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+            im.thumbnail((1920, 1080))
+            pid = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(2)
+            f = self.photos_dir / f"{pid}.jpg"; self.photos_dir.mkdir(parents=True, exist_ok=True)
+            im.save(f, "JPEG", quality=88)
+            th = im.copy(); th.thumbnail((160, 160)); b = io.BytesIO(); th.save(b, "JPEG", quality=55)
+            f.with_suffix(".thumb").write_text(base64.b64encode(b.getvalue()).decode())
+        if len(self.photos()) >= 100:
+            raise RuntimeError("Album plein (100 photos max) : supprimez-en quelques-unes")
+        await asyncio.to_thread(work)
+        self.publish_photos()
+
+    def photo_del(self, pid):
+        for ext in (".jpg", ".thumb"):
+            (self.photos_dir / f"{Path(pid).name}{ext}").unlink(missing_ok=True)
+        self.publish_photos()
+
+    async def slideshow_start(self, opts):
+        s = self.st["slideshow"]; s.update({k: opts[k] for k in ("seconds", "shuffle", "minutes") if k in opts}); self.save()
+        files = self.photos()
+        if not files:
+            raise RuntimeError("Ajoutez d'abord des photos")
+        await self.tv_show()
+        self.display.slideshow(files, int(s["seconds"]), bool(s["shuffle"]))
+        mins = int(s.get("minutes") or 0)
+        self.slide_until = time.time() + mins * 60 if mins else 0
+        self.changed()
+
+    async def slideshow_guard(self):
+        while True:
+            await asyncio.sleep(15)
+            if self.display.what == "slideshow" and self.slide_until and time.time() > self.slide_until:
+                log.info("fin du diaporama (durée atteinte)")
+                await self.tv_release()
+                self.event(type="slideshow", step="ended")
+
+    # ---- réseau / Wi-Fi
+    async def net_watch(self):
+        await asyncio.sleep(50)  # laisse le temps au câble / Wi-Fi connu de se connecter
+        while True:
+          try:
+            if not self.mq_ok and not self.setup_mode:
+                cur = await asyncio.to_thread(self.wifi.current)
+                if not cur:
+                    log.warning("pas d'Internet : passage en mode installation Wi-Fi")
+                    await self.setup_start()
+            if self.mq_ok:
+                self.net_info = await asyncio.to_thread(self.wifi.current)
+          except FileNotFoundError:
+            return  # pas de NetworkManager
+          except Exception as e:
+            log.warning("surveillance réseau: %s", e)
+          await asyncio.sleep(30)
+
+    async def setup_start(self, reason=""):
+        self.setup_mode = True
+        self.wifi_nets = await asyncio.to_thread(self.wifi.scan)
+        ssid = "ATLAS-Setup-" + self.conf["device_id"][-4:]
+        pw = self.st.setdefault("setup_pw", "".join(random.choice("23456789") for _ in range(8))); self.save()
+        await asyncio.to_thread(self.wifi.start_hotspot, ssid, pw)
+        if not self.portal:
+            Portal.agent = self
+            self.portal = ThreadingHTTPServer(("0.0.0.0", 80), Portal)
+            threading.Thread(target=self.portal.serve_forever, daemon=True).start()
+        lines = ["1. Scannez le QR code ① : votre téléphone rejoint le Wi-Fi ATLAS.",
+                 f"Ou : Réglages Wi-Fi → {ssid} (mot de passe {pw}).", "",
+                 "2. Scannez le QR code ② : choisissez le Wi-Fi de la maison et tapez son mot de passe."]
+        if reason:
+            lines = [f"⚠ {reason}", ""] + lines
+        p = await asyncio.to_thread(render_screen, "Connexion au Wi-Fi", lines,
+                                    [("① Wi-Fi ATLAS", f"WIFI:T:WPA;S:{ssid};P:{pw};;"), ("② Choisir le Wi-Fi", "http://10.42.0.1")],
+                                    (200, 140, 30))
+        await self.tv_show(p, "setup")
+
+    async def wifi_join(self, ssid, pw):
+        p = await asyncio.to_thread(render_screen, "Connexion en cours…", [f"Réseau : {ssid}", "Merci de patienter (30 s environ)."])
+        self.display.image(p, "setup")
+        ok, out = await asyncio.to_thread(self.wifi.connect, ssid, pw)
+        for _ in range(20):
+            if ok and self.mq_ok:
+                break
+            await asyncio.sleep(2)
+        if ok and self.mq_ok:
+            self.setup_mode = False
+            if self.portal:
+                self.portal.shutdown(); self.portal.server_close(); self.portal = None
+            log.info("Wi-Fi %s connecté", ssid)
+            if not self.st["devices"]:
+                await self.show_pair_qr()
+            else:
+                p = await asyncio.to_thread(render_screen, "✓ Connecté !", [f"Wi-Fi : {ssid}", "ATLAS est prêt."], (), (30, 142, 90))
+                self.display.image(p, "setup"); await asyncio.sleep(8); await self.tv_release()
+        else:
+            log.warning("échec Wi-Fi %s : %s", ssid, out)
+            await self.setup_start("Connexion impossible : vérifiez le mot de passe")
+
     # ---- mise à jour à distance
     def update_url(self):
         if self.conf.get("update_url"):
@@ -573,6 +995,18 @@ class Agent:
         asyncio.get_running_loop().run_in_executor(None, ensure_deps)
         self.mqtt_start()
         asyncio.create_task(self.state_publisher())
+        asyncio.create_task(self.slideshow_guard())
+        asyncio.create_task(self.net_watch())
+        async def hdmi_boot():
+            await asyncio.sleep(20)
+            try:
+                await self.hdmi_refresh()
+            except Exception as e:
+                log.warning("HDMI/CEC: %s", e)
+            await asyncio.sleep(25)
+            if self.mq_ok:
+                self.publish_photos()
+        asyncio.create_task(hdmi_boot())
         if self.st["active"] in self.st["devices"]:
             try:
                 await self.activate(self.st["active"])
