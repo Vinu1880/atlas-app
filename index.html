@@ -51,6 +51,13 @@ button.flash-err{background:var(--bad)!important;color:#fff!important}
 .progress{height:4px;border-radius:2px;background:var(--line);overflow:hidden;margin-top:10px}
 .progress i{display:block;height:100%;width:40%;background:var(--acc);animation:pr 1.2s ease-in-out infinite}
 @keyframes pr{0%{margin-left:-40%}100%{margin-left:100%}}
+.shot{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:16/9;margin-bottom:10px}
+.shot img{width:100%;height:100%;object-fit:contain;display:block}
+.shot .age{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:3px 8px;border-radius:8px}
+.shot .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ab;font-size:14px;text-align:center;padding:12px}
+.focus{font-weight:700;font-size:17px;margin:2px 0 4px}
+button.on{background:var(--acc);color:#fff}
+ol{padding-left:20px;margin:8px 0}
 </style>
 </head>
 <body>
@@ -81,6 +88,24 @@ button.flash-err{background:var(--bad)!important;color:#fff!important}
       <div><span class="mute">Chaîne</span><b id="sCh">—</b></div>
       <div><span class="mute">Écran</span><b id="sApp">—</b></div>
       <div><span class="mute">Volume</span><b id="sVol">—</b></div>
+    </div>
+  </div>
+
+  <div class="card hide" id="screenCard">
+    <h2>Écran de la TV</h2>
+    <div id="scrOff">
+      <p class="mute" style="margin-top:0">Voyez les menus affichés sur la TV pour guider la télécommande. À activer une fois, sur place.</p>
+      <details><summary>Préparer la box (sur place, 2 min)</summary>
+        <ol class="mute"><li>Sur la box : Paramètres → Préférences de l'appareil → À propos.</li><li>Appuyez 7 fois sur « Build » jusqu'au message « Vous êtes développeur ».</li><li>Retour → Options pour les développeurs → activez « Débogage USB » / « Débogage réseau ».</li><li>Touchez le bouton ci-dessous, puis sur la TV cochez « Toujours autoriser » et validez.</li></ol></details>
+      <button class="primary" id="scrEnable" style="margin-top:10px">Activer la vue écran</button>
+      <div id="scrBanner" class="banner hide"></div>
+    </div>
+    <div id="scrOn" class="hide">
+      <div class="shot"><img id="scrImg" alt=""><div class="empty" id="scrEmpty">Touchez « Actualiser » pour voir l'écran</div><span class="age hide" id="scrAge"></span></div>
+      <div class="focus" id="scrFocus"></div>
+      <div class="mute" id="scrTexts" style="margin-bottom:10px"></div>
+      <div class="grid g2"><button id="scrShot">📷 Actualiser</button><button id="scrLive">▶ Suivre en direct</button></div>
+      <p class="mute" style="margin:10px 2px 0">En mode direct, l'écran s'actualise après chaque bouton. L'image des chaînes reste noire (protégée) : seuls les menus sont visibles.</p>
     </div>
   </div>
 
@@ -123,6 +148,7 @@ button.flash-err{background:var(--bad)!important;color:#fff!important}
         <label class="mute">Favoris (numéro=nom, séparés par des virgules)<input id="setFavs" placeholder="1=RTS 1, 2=RTS 2, 3=TF1"></label>
         <button class="primary" id="saveSet">Enregistrer</button>
         <button id="rescan">Changer de TV</button>
+        <button id="updBtn">⬇ Mettre à jour le boîtier</button>
         <p class="mute" id="info"></p>
       </div>
     </details>
@@ -177,6 +203,7 @@ else {
     if (t==='online') { online = s==='1'; setConn(); render(); }
     else if (t==='state') { try{ state = JSON.parse(s); }catch(e){} render(); }
     else if (t==='event') { try{ onEvent(JSON.parse(s)); }catch(e){} }
+    else if (t==='screen') { try{ showScreen(JSON.parse(s)); }catch(e){} }
   });
 
   function setConn(){
@@ -203,6 +230,9 @@ else {
     const favs = st.favorites||[];
     $('#favCard').classList.toggle('hide', !favs.length);
     $('#favs').innerHTML = favs.map(f=>`<button data-ch="${f.n}">${esc(f.name)}<br><span class="mute">${f.n}</span></button>`).join('');
+    const sc = state.screen || {};
+    $('#screenCard').classList.toggle('hide', !sc.supported);
+    $('#scrOff').classList.toggle('hide', !!sc.enabled); $('#scrOn').classList.toggle('hide', !sc.enabled);
     const dev = (state.devices||[]).find(d=>d.id===state.active);
     $('#info').textContent = dev ? `TV : ${dev.name} (${dev.kind}, ${dev.ip}) · agent ${state.agent}` : '';
   }
@@ -216,7 +246,34 @@ else {
     return a.split('.').slice(-1)[0];
   }
 
+  let lastShot=0, live=false, liveT=null, liveEnd=0;
+  function showScreen(d){
+    if(!d.img) return;
+    lastShot=d.ts*1000; $('#scrImg').src='data:image/jpeg;base64,'+d.img; $('#scrEmpty').classList.add('hide');
+    $('#scrFocus').textContent = d.focus ? '▸ '+d.focus : (d.dark ? 'Image protégée (chaîne en cours)' : '');
+    $('#scrTexts').textContent = (d.texts||[]).filter(x=>x!==d.focus).slice(0,6).join(' · ');
+    unbusy($('#scrShot')); ageTick();
+  }
+  function ageTick(){ if(!lastShot) return; const a=Math.max(0,Math.round((Date.now()-lastShot)/1000)); const el=$('#scrAge'); el.classList.remove('hide');
+    el.textContent = a<5 ? 'à l’instant' : a<60 ? `il y a ${a} s` : `il y a ${Math.round(a/60)} min`; }
+  setInterval(ageTick, 5000);
+  function setLive(on){
+    live=on; clearInterval(liveT); const b=$('#scrLive'); b.classList.toggle('on', on); b.textContent = on ? '⏸ Direct activé' : '▶ Suivre en direct';
+    if(on){ liveEnd=Date.now()+5*60000; send({action:'screen', watch:120}); liveT=setInterval(()=>{ if(Date.now()>liveEnd){ setLive(false); return;} send({action:'screen', watch:120}); }, 100000); }
+  }
+  const scrBanner = (cls, ico, html) => { const b=$('#scrBanner'); b.className='banner '+cls; b.innerHTML=`<span class="ico">${ico}</span><span>${html}</span>`; };
+
   function onEvent(e){
+    if (e.type==='screen'){
+      if (e.step==='connecting') scrBanner('wait','<span class="spin"></span>','Connexion à la box…');
+      if (e.step==='authorize') scrBanner('wait pulse','📺','Sur la TV : cochez <b>« Toujours autoriser »</b> puis validez <b>Autoriser</b>.');
+      if (e.step==='ok'){ scrBanner('good','✅','Vue écran activée !'); unbusy($('#scrEnable')); }
+      if (e.step==='error'){ if(!$('#scrOff').classList.contains('hide')){ scrBanner('err','⚠️', esc(e.message)); unbusy($('#scrEnable')); } else { toast('⚠️ '+e.message, 3500); unbusy($('#scrShot')); } }
+    }
+    if (e.type==='update'){
+      if (e.step==='download') toast('⬇ Téléchargement de la mise à jour…', 4000);
+      if (e.step==='restart'){ toast('✅ Version '+e.version+' installée, redémarrage du boîtier…', 5000); unbusy($('#updBtn')); }
+    }
     if (e.type==='ack'){ const b=pending[e.cid]; if(b){ delete pending[e.cid]; if(b.dataset.k||b.dataset.ch||b.dataset.a==='power') flash(b, e.ok); else b.classList.remove('chosen'); }
       if(!e.ok && e.message) toast('⚠️ '+e.message, 3500); }
     if (e.type==='scan'){
@@ -232,7 +289,7 @@ else {
         tick=setInterval(()=>{ n--; if(n<=0){ clearInterval(tick); return;} up(); },1000); }
       if (e.step==='starting') banner('wait','<span class="spin"></span>','Connexion à la TV…');
       if (e.step==='code_needed'){ banner(e.error?'err':'wait pulse', e.error?'⚠️':'📺', e.error ? 'Code refusé. Vérifiez le code affiché sur la TV et réessayez.' : 'Un <b>code</b> est affiché sur la TV. Tapez-le ci-dessous.'); $('#codeBox').classList.remove('hide'); unbusy($('#codeBtn')); $('#code').focus(); }
-      if (e.step==='done'){ $('#codeBox').classList.add('hide'); banner('good','✅','TV associée ! Ouverture de la télécommande…'); toast('✅ TV associée !'); setTimeout(hideBanner, 3000); }
+      if (e.step==='done'){ $('#codeBox').classList.add('hide'); banner('good','✅', e.already ? 'TV déjà autorisée, rien à faire sur la TV.' : 'TV associée ! Ouverture de la télécommande…'); toast('✅ TV associée !'); setTimeout(hideBanner, 3000); }
       if (e.step==='error'){ banner('err','⚠️','Échec : '+esc(e.message||'la TV n’a pas répondu')+'.<br><span style="font-weight:400">Vérifiez que la TV est allumée, puis réessayez.</span>'); $('#codeBox').classList.add('hide'); unbusy($('#codeBtn'));
         document.querySelectorAll('[data-pair]').forEach(x=>{x.classList.remove('busy','chosen'); unbusy(x);}); }
     }
@@ -260,6 +317,10 @@ else {
     const favorites = $('#setFavs').value.split(',').map(x=>x.split('=')).filter(x=>x.length===2 && +x[0]>0).map(([n,name])=>({n:+n.trim(), name:name.trim()}));
     send({action:'settings', fav_channel:+$('#setFav').value||1, volume_steps:+$('#setVol').value||12, favorites}); toast('Réglages enregistrés');
   };
+  $('#scrEnable').onclick = () => { if(send({action:'screen_enable'})){ busy($('#scrEnable'),'Activation…'); scrBanner('wait','<span class="spin"></span>','Demande envoyée…'); } };
+  $('#scrShot').onclick = () => { if(send({action:'screen', watch: live?120:0})) busy($('#scrShot'),'Capture…'); };
+  $('#scrLive').onclick = () => setLive(!live);
+  $('#updBtn').onclick = () => { if(confirm('Installer la dernière version du logiciel sur le boîtier ?') && send({action:'update'})) busy($('#updBtn'),'Mise à jour…'); };
   $('#rescan').onclick = () => { if(confirm('Oublier cette TV et en rechercher une autre ?')) send({action:'forget'}); };
 }
 </script>
