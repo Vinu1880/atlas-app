@@ -3,7 +3,7 @@
 Se connecte tout seul au serveur MQTT, trouve la TV sur le réseau local,
 gère l'appairage et exécute les commandes envoyées par l'app.
 """
-import asyncio, base64, html, io, json, logging, os, random, re, secrets, shutil, socket, ssl, subprocess, sys, threading, time, urllib.parse, urllib.request
+import asyncio, base64, html, io, pwd, json, logging, os, random, re, secrets, shutil, socket, ssl, subprocess, sys, threading, time, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.4.1"
+VERSION = "0.5"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -70,6 +70,12 @@ def ensure_deps():
             need.append("fonts-dejavu-core")
         if not shutil.which("dnsmasq"):
             need.append("dnsmasq-base")  # nécessaire au Wi-Fi « ATLAS-Setup »
+        if not (shutil.which("chromium") or shutil.which("chromium-browser")):
+            need.append("chromium")  # appel vidéo sur la TV
+        if not shutil.which("cage"):
+            need.append("cage")
+        if not shutil.which("arecord"):
+            need.append("alsa-utils")
         if need:
             log.info("installation de %s", need)
             subprocess.run(["apt-get", "install", "-y", "-q", *need], timeout=1200,
@@ -83,12 +89,97 @@ def ensure_deps():
             subprocess.run(["raspi-config", "nonint", "do_wifi_country", "CH"], timeout=60,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(["rfkill", "unblock", "wifi"], timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        write_call_unit()
         cfg = Path("/boot/firmware/config.txt")  # le Pi ne doit pas voler l'entrée HDMI au démarrage
         if cfg.exists() and "hdmi_ignore_cec_init" not in cfg.read_text():
             with cfg.open("a") as f:
                 f.write("\n# ATLAS\nhdmi_ignore_cec_init=1\nhdmi_force_hotplug=1\n")
     except Exception as e:
         log.warning("installation des dépendances: %s", e)
+
+
+# --------------------------------------------------------------- appel vidéo (navigateur plein écran sur la TV)
+CALL_ENV = Path("/run/atlas-call.env")
+CALL_UNIT = Path("/etc/systemd/system/atlas-call.service")
+
+
+def kiosk_user():
+    try:
+        return pwd.getpwuid(1000).pw_name
+    except KeyError:
+        return "atlas"
+
+
+def write_call_unit():
+    browser = shutil.which("chromium") or shutil.which("chromium-browser") or "/usr/bin/chromium"
+    unit = f"""[Unit]
+Description=ATLAS - appel video sur la TV
+After=systemd-user-sessions.service
+
+[Service]
+User={kiosk_user()}
+PAMName=login
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+EnvironmentFile={CALL_ENV}
+ExecStart=/usr/bin/cage -s -- {browser} --kiosk --incognito --noerrdialogs --disable-infobars --no-first-run --password-store=basic --disable-session-crashed-bubble --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --ozone-platform=wayland --enable-features=OverlayScrollbar ${{ATLAS_CALL_URL}}
+Restart=no
+"""
+    if not CALL_UNIT.exists() or CALL_UNIT.read_text() != unit:
+        CALL_UNIT.write_text(unit)
+        subprocess.run(["systemctl", "daemon-reload"], timeout=30)
+
+
+def alsa_setup():
+    """Son de l'appel : sortie par la TV (HDMI), micro de la webcam USB."""
+    cards = Path("/proc/asound/cards").read_text() if Path("/proc/asound/cards").exists() else ""
+    ids = re.findall(r"^\s*\d+\s+\[(\S+)\s*\]:\s*(.*)$", cards, re.M)
+    hdmi = next((i for i, d in ids if "hdmi" in i.lower() or "hdmi" in d.lower()), None)
+    mic = next((i for i, d in ids if "usb" in d.lower() or "camera" in d.lower() or "webcam" in d.lower()), None)
+    if not hdmi:
+        return {"hdmi": None, "mic": mic}
+    conf = "pcm.!default {\n type asym\n playback.pcm \"atlas_out\"\n capture.pcm \"atlas_in\"\n}\n"
+    conf += f"pcm.atlas_out {{\n type plug\n slave.pcm \"hdmi:CARD={hdmi},DEV=0\"\n}}\n"
+    conf += f"pcm.atlas_in {{\n type plug\n slave.pcm \"{'hw:CARD=' + mic + ',DEV=0' if mic else 'null'}\"\n}}\n"
+    conf += f"ctl.!default {{\n type hw\n card {hdmi}\n}}\n"
+    Path("/etc/asound.conf").write_text(conf)
+    return {"hdmi": hdmi, "mic": mic}
+
+
+def webcam_present():
+    return any(Path("/dev").glob("video*")) and any(
+        "uvc" in (p / "device/driver").resolve().name if (p / "device/driver").exists() else False
+        for p in Path("/sys/class/video4linux").glob("video*"))
+
+
+class CECKeys:
+    """Écoute les touches de la télécommande de la TV (transmises par HDMI-CEC) pendant un appel."""
+
+    def __init__(self, on_key):
+        self.on_key = on_key; self.proc = None
+
+    def start(self):
+        if self.proc or not Path("/dev/cec0").exists():
+            return
+        self.proc = subprocess.Popen(["cec-ctl", "-d", "/dev/cec0", "--monitor"], stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True)
+        def reader(p=self.proc):
+            for ln in p.stdout:
+                if "USER_CONTROL_PRESSED" in ln.upper() or "ui-cmd" in ln:
+                    m = re.search(r"ui-cmd:\s*([a-z0-9-]+)", ln, re.I)
+                    if m:
+                        self.on_key(m.group(1).lower())
+        threading.Thread(target=reader, daemon=True).start()
+
+    def stop(self):
+        if self.proc:
+            self.proc.terminate(); self.proc = None
 
 
 # --------------------------------------------------------------- HDMI : CEC (bascule d'entrée)
@@ -623,6 +714,8 @@ class Agent:
         self.wifi_nets = []; self.setup_mode = False; self.portal = None
         self.slide_until = 0
         self.prev_source = None
+        self.call = None
+        self.cec_keys = CECKeys(lambda k: self.mq.publish(f"{self.base}/call/key", json.dumps({"key": k})))
         self.photos_dir = DATA / "photos"
         self.st.setdefault("slideshow", {"seconds": 8, "shuffle": True, "minutes": 30})
         self.mq_ok = False
@@ -660,6 +753,8 @@ class Agent:
         self.mq_ok = not rc.is_failure
         cl.subscribe(f"{self.base}/cmd", qos=1)
         cl.publish(f"{self.base}/online", "1", qos=1, retain=True)
+        ice = self.conf.get("ice_servers") or [{"urls": "stun:stun.l.google.com:19302"}]
+        cl.publish(f"{self.base}/call/config", json.dumps({"ice": ice}), qos=1, retain=True)
         self.loop.call_soon_threadsafe(self._dirty.set)
 
     def event(self, **kw):
@@ -686,6 +781,7 @@ class Agent:
                   "slideshow": {**self.st["slideshow"], "running": self.display.what == "slideshow" and self.display.running(),
                                 "until": int(self.slide_until)},
                   "net": self.net_info,
+                  "call": {"active": bool(self.call), "webcam": webcam_present()},
                   "pairing": self.pairing and {"id": self.pairing["info"]["id"], "step": self.pairing["step"]}}
             self.mq.publish(f"{self.base}/state", json.dumps(st), qos=1, retain=True)
 
@@ -778,6 +874,11 @@ class Agent:
             elif a == "forget":
                 self.st["devices"].pop(cmd.get("device") or self.st["active"], None)
                 self.st["active"] = None; self.tv = None; self.save(); self.changed()
+            elif a == "call_start":
+                audio = await self.call_start(cmd["call"], str(cmd.get("name") or "Votre famille")[:40], bool(cmd.get("auto")))
+                self.event(type="ack", cid=cid, ok=True, audio=audio, webcam=webcam_present()); return
+            elif a == "call_end":
+                await self.call_end()
             elif a == "_wifi_join":
                 await self.wifi_join(cmd["ssid"], cmd.get("pw", ""))
             elif a == "wifi_setup":
@@ -993,6 +1094,8 @@ class Agent:
         self.publish_photos()
 
     async def slideshow_start(self, opts):
+        if self.call:
+            raise RuntimeError("Un appel vidéo est en cours")
         s = self.st["slideshow"]; s.update({k: opts[k] for k in ("seconds", "shuffle", "minutes") if k in opts}); self.save()
         files = self.photos()
         if not files:
@@ -1102,6 +1205,46 @@ class Agent:
             log.warning("échec Wi-Fi %s : %s", ssid, out)
             await self.setup_start(wifi_error(out))
 
+    # ---- appel vidéo
+    def call_url(self, call_id, name, auto):
+        c = self.conf
+        q = urllib.parse.urlencode({"h": c["mqtt_host"], "port": c.get("ws_port", 8084), "u": c["mqtt_user"], "p": c["mqtt_pass"],
+                                    "d": c["device_id"], "call": call_id, "name": name, "auto": "1" if auto else "0"})
+        return c["app_url"].split("#")[0].rstrip("/") + "/tv.html#" + q
+
+    async def call_start(self, call_id, name, auto):
+        if self.call:
+            await self.call_end()
+        if not CALL_UNIT.exists():
+            await asyncio.to_thread(ensure_deps)
+        if not (shutil.which("chromium") or shutil.which("chromium-browser")) or not shutil.which("cage"):
+            raise RuntimeError("appel vidéo pas encore prêt (installation du navigateur en cours, réessayez dans 10 min)")
+        audio = await asyncio.to_thread(alsa_setup)
+        log.info("appel %s de %s (son %s)", call_id, name, audio)
+        self.display.stop()
+        await self.tv_show()  # la TV bascule sur le boîtier
+        CALL_ENV.write_text('ATLAS_CALL_URL="' + self.call_url(call_id, name, auto) + '"\n')
+        await asyncio.to_thread(subprocess.run, ["systemctl", "restart", "atlas-call.service"], timeout=30)
+        self.call = {"id": call_id, "since": time.time()}
+        self.cec_keys.start()
+        self.changed()
+        return audio
+
+    async def call_end(self):
+        self.cec_keys.stop()
+        await asyncio.to_thread(subprocess.run, ["systemctl", "stop", "atlas-call.service"], timeout=30)
+        was = bool(self.call)
+        self.call = None
+        if was:
+            await self.tv_release()
+        self.changed()
+
+    async def call_guard(self):
+        while True:
+            await asyncio.sleep(30)
+            if self.call and time.time() - self.call["since"] > 3 * 3600:
+                log.info("appel trop long, arrêt de sécurité"); await self.call_end()
+
     # ---- mise à jour à distance
     def update_url(self):
         if self.conf.get("update_url"):
@@ -1135,6 +1278,7 @@ class Agent:
         asyncio.create_task(self.state_publisher())
         asyncio.create_task(self.slideshow_guard())
         asyncio.create_task(self.scheduler())
+        asyncio.create_task(self.call_guard())
         asyncio.create_task(self.net_watch())
         async def hdmi_boot():
             await asyncio.sleep(20)

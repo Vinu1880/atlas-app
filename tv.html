@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATLAS TV - Appel</title>
+<style>
+:root{--acc:#2aa3c9;--ok:#2fbf71;--bad:#e5533d}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b1419;color:#fff;font-family:"DejaVu Sans",-apple-system,"Segoe UI",sans-serif;overflow:hidden;cursor:none}
+#remote{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#self{position:fixed;right:3vw;bottom:4vh;width:22vw;aspect-ratio:16/9;object-fit:cover;border-radius:2vh;border:.4vh solid rgba(255,255,255,.7);background:#111;transform:scaleX(-1)}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  background:radial-gradient(circle at 50% 35%,#16485a,#0b1419 70%)}
+.avatar{width:22vh;height:22vh;border-radius:50%;background:var(--acc);display:grid;place-items:center;font-size:11vh;font-weight:700;margin-bottom:4vh;
+  box-shadow:0 0 0 0 rgba(42,163,201,.6);animation:ring 1.6s infinite}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(42,163,201,.55)}100%{box-shadow:0 0 0 7vh rgba(42,163,201,0)}}
+h1{font-size:7vh;margin:0 0 2vh}
+p{font-size:3.6vh;margin:.6vh 0;color:#cfe3ea}
+.keys{display:flex;gap:6vw;margin-top:6vh}
+.key{display:flex;align-items:center;gap:1.5vw;font-size:3.4vh;font-weight:700;padding:2vh 3vw;border-radius:2vh;background:rgba(255,255,255,.1)}
+.key b{display:inline-grid;place-items:center;min-width:7vh;height:7vh;border-radius:50%;background:var(--ok);font-size:2.8vh}
+.key.no b{background:var(--bad);border-radius:1.5vh;padding:0 1.2vw}
+.bar{position:fixed;left:3vw;top:4vh;font-size:3vh;padding:1.2vh 2vw;border-radius:1.5vh;background:rgba(0,0,0,.5)}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<video id="remote" autoplay playsinline class="hide"></video>
+<video id="self" autoplay playsinline muted class="hide"></video>
+<div id="bar" class="bar hide"></div>
+
+<div id="ov" class="ov">
+  <div class="avatar" id="av">A</div>
+  <h1 id="title">Connexion…</h1>
+  <p id="sub">ATLAS TV</p>
+  <div class="keys hide" id="keys">
+    <div class="key"><b>OK</b>Répondre</div>
+    <div class="key no"><b>↩</b>Refuser</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const h = new URLSearchParams(location.hash.slice(1));
+const cfg = {h:h.get('h'), port:h.get('port')||'8084', ws:h.get('ws'), u:h.get('u'), p:h.get('p'), d:h.get('d')};
+const CALL = h.get('call'), NAME = h.get('name') || 'Votre famille', AUTO = h.get('auto') === '1';
+const base = `atlas/${cfg.d}/call`;
+let ice = [{urls:'stun:stun.l.google.com:19302'}], pc = null, local = null, phase = 'wait', pendingIce = [], readyT = null, autoT = null, startT = 0;
+
+$('#av').textContent = (NAME.trim()[0] || 'A').toUpperCase();
+const show = (title, sub) => { $('#title').textContent = title; $('#sub').textContent = sub || ''; };
+
+// ---- sonnerie (générée, pas de fichier)
+let actx = null, ringT = null;
+function ring(on){
+  clearInterval(ringT);
+  if (!on) return;
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  const beep = () => { [0, .45].forEach(off => { const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = 660; g.gain.setValueAtTime(0, actx.currentTime + off);
+    g.gain.linearRampToValueAtTime(.35, actx.currentTime + off + .03); g.gain.linearRampToValueAtTime(0, actx.currentTime + off + .35);
+    o.connect(g).connect(actx.destination); o.start(actx.currentTime + off); o.stop(actx.currentTime + off + .4); }); };
+  beep(); ringT = setInterval(beep, 2500);
+}
+
+const client = mqtt.connect(`${cfg.ws?'ws':'wss'}://${cfg.h}:${cfg.port}/mqtt`, {username:cfg.u, password:cfg.p, clientId:'tv-'+Math.random().toString(16).slice(2,10), reconnectPeriod:2000});
+const pub = (o) => client.publish(`${base}/tv`, JSON.stringify({call:CALL, ...o}), {qos:1});
+
+client.on('connect', () => {
+  client.subscribe([`${base}/app`, `${base}/key`, `${base}/config`]);
+  show('Connexion…', 'Préparation de l’appel');
+  clearInterval(readyT); pub({type:'ready'}); readyT = setInterval(() => { if (phase === 'wait') pub({type:'ready'}); }, 3000);
+});
+client.on('message', async (topic, msg) => {
+  let m; try { m = JSON.parse(msg.toString()); } catch(e) { return; }
+  const t = topic.slice(base.length + 1);
+  if (t === 'config') { if (m.ice) ice = m.ice; return; }
+  if (t === 'key') { onKey(m.key); return; }
+  if (t !== 'app' || m.call !== CALL) return;
+  if (m.type === 'offer' && phase === 'wait') await onOffer(m);
+  else if (m.type === 'ice' && m.candidate) { if (pc && pc.remoteDescription) pc.addIceCandidate(m.candidate).catch(()=>{}); else pendingIce.push(m.candidate); }
+  else if (m.type === 'hangup') end('Appel terminé');
+});
+
+async function onOffer(m){
+  phase = 'ringing'; clearInterval(readyT);
+  pc = new RTCPeerConnection({iceServers: ice});
+  pc.onicecandidate = e => { if (e.candidate) pub({type:'ice', candidate:e.candidate.toJSON()}); };
+  pc.ontrack = e => { $('#remote').srcObject = e.streams[0]; };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed') end('Connexion perdue');
+    if (pc.connectionState === 'connected') { startT = Date.now(); }
+  };
+  await pc.setRemoteDescription({type:'offer', sdp:m.sdp});
+  pendingIce.splice(0).forEach(c => pc.addIceCandidate(c).catch(()=>{}));
+  show(`${NAME} vous appelle`, AUTO ? 'L’appel va s’ouvrir tout seul…' : '');
+  $('#keys').classList.remove('hide'); ring(true);
+  if (AUTO) autoT = setTimeout(answer, 10000);
+}
+
+async function answer(){
+  if (phase !== 'ringing') return;
+  phase = 'live'; clearTimeout(autoT); ring(false); $('#keys').classList.add('hide'); show('Connexion…', '');
+  try {
+    local = await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:640}, height:{ideal:360}, frameRate:{ideal:20, max:24}},
+      audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+    local.getTracks().forEach(tr => pc.addTrack(tr, local));
+    $('#self').srcObject = local; $('#self').classList.remove('hide');
+  } catch(e) {
+    try { local = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true}}); local.getTracks().forEach(tr => pc.addTrack(tr, local)); } catch(e2) {}
+    $('#bar').textContent = 'Webcam non détectée : votre proche ne vous voit pas'; $('#bar').classList.remove('hide');
+  }
+  const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+  pub({type:'answer', sdp:ans.sdp});
+  $('#ov').classList.add('hide'); $('#remote').classList.remove('hide');
+  tick();
+}
+
+function tick(){
+  if (phase !== 'live') return;
+  if (startT && $('#bar').dataset.cam !== 'off') {
+    const s = Math.round((Date.now() - startT) / 1000);
+    if (!$('#bar').textContent.startsWith('Webcam')) { $('#bar').textContent = `📞 ${NAME} · ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; $('#bar').classList.remove('hide'); }
+  }
+  setTimeout(tick, 1000);
+}
+
+function end(msg, notify){
+  if (phase === 'ended') return;
+  if (notify) pub({type:'hangup'});
+  phase = 'ended'; ring(false); clearTimeout(autoT); clearInterval(readyT);
+  try { pc && pc.close(); } catch(e) {}
+  if (local) local.getTracks().forEach(t => t.stop());
+  $('#remote').classList.add('hide'); $('#self').classList.add('hide'); $('#bar').classList.add('hide'); $('#keys').classList.add('hide');
+  $('#ov').classList.remove('hide'); $('#av').style.animation = 'none'; show(msg, 'Retour à la télévision…');
+}
+
+function onKey(k){
+  k = String(k).toLowerCase();
+  const ok = ['select','enter','ok','play','f2-red','f3-green'].includes(k);
+  const no = ['back','exit','root-menu','stop','f1-blue','backspace','escape'].includes(k);
+  if (phase === 'ringing' && ok) answer();
+  else if (phase === 'ringing' && no) end('Appel refusé', true);
+  else if (phase === 'live' && no) end('Appel terminé', true);
+}
+// clavier (tests)
+addEventListener('keydown', e => onKey(e.key === 'Enter' ? 'select' : e.key === 'Escape' || e.key === 'Backspace' ? 'back' : e.key));
+</script>
+</body>
+</html>
