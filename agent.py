@@ -13,7 +13,7 @@ from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, I
 from samsungtvws import SamsungTVWS
 from wakeonlan import send_magic_packet
 
-VERSION = "0.3"
+VERSION = "0.3.1"
 AGENT_FILE = Path(__file__).resolve()
 CONF = Path("/etc/atlas/config.json")
 DATA = Path("/var/lib/atlas")
@@ -256,11 +256,27 @@ class WiFi:
         self.nm("connection", "down", self.CON)
 
     def connect(self, ssid, pw):
-        self.stop_hotspot(); time.sleep(2)
-        self.nm("device", "wifi", "rescan", timeout=20); time.sleep(4)
+        self.stop_hotspot(); time.sleep(3)
+        self.nm("connection", "delete", "id", ssid)  # efface un ancien essai (mot de passe périmé)
+        for _ in range(4):  # attendre que le réseau réapparaisse dans la liste après l'arrêt du hotspot
+            self.nm("device", "wifi", "rescan", timeout=20); time.sleep(4)
+            rc, out = self.nm("-t", "-f", "SSID", "device", "wifi", "list")
+            if ssid in [l.replace("\\:", ":") for l in out.splitlines()]:
+                break
         args = ["device", "wifi", "connect", ssid, "ifname", "wlan0"] + (["password", pw] if pw else [])
-        rc, out = self.nm(*args, timeout=60)
+        rc, out = self.nm(*args, timeout=90)
         return rc == 0, out
+
+
+def wifi_error(out):
+    o = out.lower()
+    if "secrets were required" in o or "802-1x" in o or "psk" in o or "authentication" in o:
+        return "Mot de passe refusé par le Wi-Fi"
+    if "no network with ssid" in o or "not found" in o:
+        return "Réseau introuvable (boîtier trop loin du Wi-Fi ?)"
+    if "timeout" in o:
+        return "Le Wi-Fi ne répond pas (trop loin ?)"
+    return "Connexion impossible : " + out.strip().splitlines()[-1][:70] if out.strip() else "Connexion impossible"
 
 
 PORTAL = """<!doctype html><html lang=fr><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -568,7 +584,7 @@ class Agent:
         if c.get("mqtt_tls", True):
             cl.tls_set(cert_reqs=ssl.CERT_REQUIRED)
         cl.will_set(f"{self.base}/online", "0", qos=1, retain=True)
-        cl.reconnect_delay_set(2, 60)
+        cl.reconnect_delay_set(2, 10)  # se reconnecte vite après un changement de réseau
         cl.on_connect = self._on_connect
         cl.on_disconnect = lambda *_a: setattr(self, "mq_ok", False)
         cl.on_message = lambda _c, _u, m: self.loop.call_soon_threadsafe(self.queue.put_nowait, m.payload)
@@ -946,10 +962,21 @@ class Agent:
         p = await asyncio.to_thread(render_screen, "Connexion en cours…", [f"Réseau : {ssid}", "Merci de patienter (30 s environ)."])
         self.display.image(p, "setup")
         ok, out = await asyncio.to_thread(self.wifi.connect, ssid, pw)
-        for _ in range(20):
-            if ok and self.mq_ok:
-                break
-            await asyncio.sleep(2)
+        log.info("Wi-Fi %s : %s", ssid, out[-200:])
+        if ok:
+            p = await asyncio.to_thread(render_screen, "Wi-Fi connecté", [f"Réseau : {ssid}", "Connexion au serveur ATLAS…"])
+            self.display.image(p, "setup")
+            for _ in range(45):
+                if self.mq_ok:
+                    break
+                await asyncio.sleep(2)
+        if ok and not self.mq_ok:
+            self.setup_mode = False  # le Wi-Fi est bon : on le garde, Internet reviendra
+            p = await asyncio.to_thread(render_screen, "Wi-Fi connecté, Internet absent",
+                                        [f"Réseau : {ssid}", "La box internet n'a pas l'air connectée à Internet.",
+                                         "ATLAS réessaiera tout seul."], (), (200, 140, 30))
+            self.display.image(p, "setup"); await asyncio.sleep(30); await self.tv_release()
+            return
         if ok and self.mq_ok:
             self.setup_mode = False
             if self.portal:
@@ -962,7 +989,7 @@ class Agent:
                 self.display.image(p, "setup"); await asyncio.sleep(8); await self.tv_release()
         else:
             log.warning("échec Wi-Fi %s : %s", ssid, out)
-            await self.setup_start("Connexion impossible : vérifiez le mot de passe")
+            await self.setup_start(wifi_error(out))
 
     # ---- mise à jour à distance
     def update_url(self):
