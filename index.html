@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ATLAS TV">
+<meta name="theme-color" content="#0f3b4c">
+<title>ATLAS TV</title>
+<style>
+:root{--bg:#f3f6f8;--card:#fff;--ink:#14212b;--mute:#61717d;--acc:#1f6f8b;--acc2:#0f3b4c;--ok:#1e8e5a;--bad:#c0392b;--line:#dde5ea;--key:#eef3f6}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1419;--card:#16212a;--ink:#e8eef2;--mute:#94a6b3;--acc:#4fb3d4;--acc2:#bfe6f3;--line:#24333e;--key:#1e2c37}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 2px}
+h1{font-size:22px;margin:0;letter-spacing:.5px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}
+.dot.on{background:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
+.status{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font-size:14px}
+.status b{display:block;font-size:17px}
+.mute{color:var(--mute);font-size:13px}
+button{font:inherit;border:0;border-radius:14px;background:var(--key);color:var(--ink);padding:14px 8px;min-height:56px;font-weight:600;cursor:pointer;width:100%}
+button:active{transform:scale(.97);filter:brightness(.92)}
+button.primary{background:var(--acc);color:#fff}
+button.big{font-size:21px;min-height:76px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff}
+.grid{display:grid;gap:10px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:300px;margin:0 auto}
+.pad .ok{border-radius:50%;aspect-ratio:1;background:var(--acc);color:#fff}
+.lbl{font-size:12px;color:var(--mute);text-align:center;margin:-4px 0 4px}
+input{font:inherit;width:100%;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.row{display:flex;gap:10px;align-items:center}
+.list button{text-align:left;padding:14px 16px;margin-bottom:8px}
+.hide{display:none!important}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:14px 16px;border-radius:14px;opacity:0;transition:.25s;pointer-events:none;text-align:center}
+#toast.show{opacity:.95}
+h2{font-size:17px;margin:0 0 12px}
+details summary{cursor:pointer;color:var(--mute);font-size:14px;padding:4px 0}
+.favs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+</style>
+</head>
+<body>
+<header><h1>ATLAS TV</h1><span id="conn" class="mute"><span class="dot"></span>Connexion…</span></header>
+
+<div id="nobox" class="card hide">
+  <h2>Aucun boîtier</h2>
+  <p class="mute">Scannez le QR code du boîtier ATLAS avec l'appareil photo de l'iPhone.</p>
+</div>
+
+<div id="setup" class="card hide">
+  <h2>Installation de la TV</h2>
+  <div id="setupMsg" class="mute" style="margin-bottom:12px">Le boîtier est en ligne. Recherchez la TV sur le réseau.</div>
+  <button class="primary" id="scanBtn">Rechercher la TV</button>
+  <div id="found" class="list" style="margin-top:12px"></div>
+  <div id="codeBox" class="hide" style="margin-top:8px">
+    <p>Entrez le code affiché sur la TV :</p>
+    <div class="row"><input id="code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="ex. 4F2A9C"><button class="primary" style="width:110px" id="codeBtn">Valider</button></div>
+  </div>
+</div>
+
+<div id="remote" class="hide">
+  <div class="card">
+    <div class="status">
+      <div><span class="mute">Télévision</span><b id="sPower">—</b></div>
+      <div><span class="mute">Chaîne</span><b id="sCh">—</b></div>
+      <div><span class="mute">Écran</span><b id="sApp">—</b></div>
+      <div><span class="mute">Volume</span><b id="sVol">—</b></div>
+    </div>
+  </div>
+
+  <div class="card"><button class="big" data-a="repair">🔧 Réparer la télé</button>
+    <p class="mute" style="margin:10px 2px 0">Allume la TV, sort des menus, remet la chaîne <span id="favCh">1</span> et un volume normal.</p></div>
+
+  <div class="card grid g2">
+    <button data-a="power" data-on="1">⏻ Allumer</button>
+    <button data-a="power" data-on="0">Éteindre</button>
+  </div>
+
+  <div class="card grid g2">
+    <div class="grid"><div class="lbl">Chaîne</div><button data-k="ch_up">▲ Ch +</button><button data-k="ch_down">▼ Ch −</button></div>
+    <div class="grid"><div class="lbl">Volume</div><button data-k="vol_up">🔊 +</button><button data-k="vol_down">🔉 −</button></div>
+    <button data-k="mute" style="grid-column:1/3">🔇 Couper / remettre le son</button>
+  </div>
+
+  <div class="card" id="favCard"><h2>Chaînes favorites</h2><div class="favs" id="favs"></div></div>
+
+  <div class="card">
+    <h2>Numéro de chaîne</h2>
+    <div class="row"><input id="chNum" inputmode="numeric" pattern="[0-9]*" placeholder="ex. 12"><button class="primary" style="width:110px" id="chGo">Aller</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Navigation</h2>
+    <div class="pad">
+      <span></span><button data-k="up">▲</button><span></span>
+      <button data-k="left">◀</button><button class="ok" data-k="ok">OK</button><button data-k="right">▶</button>
+      <span></span><button data-k="down">▼</button><span></span>
+    </div>
+    <div class="grid g3" style="margin-top:12px"><button data-k="back">↩ Retour</button><button data-k="home">⌂ Accueil</button><button data-k="guide">Guide</button></div>
+  </div>
+
+  <div class="card">
+    <details><summary>Réglages</summary>
+      <div class="grid" style="margin-top:12px">
+        <label class="mute">Chaîne du bouton « Réparer »<input id="setFav" inputmode="numeric"></label>
+        <label class="mute">Volume de confort (nombre d'appuis sur +)<input id="setVol" inputmode="numeric"></label>
+        <label class="mute">Favoris (numéro=nom, séparés par des virgules)<input id="setFavs" placeholder="1=RTS 1, 2=RTS 2, 3=TF1"></label>
+        <button class="primary" id="saveSet">Enregistrer</button>
+        <button id="rescan">Changer de TV</button>
+        <p class="mute" id="info"></p>
+      </div>
+    </details>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const toast = (t, ms=2200) => { const e=$('#toast'); e.textContent=t; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'), ms); };
+
+// --- configuration : lue dans le lien du QR code, puis mémorisée
+function readCfg(){
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('d')) { const c={h:h.get('h'),port:h.get('port')||'8084',ws:h.get('ws'),u:h.get('u'),p:h.get('p'),d:h.get('d'),k:h.get('k')};
+    try{localStorage.setItem('atlas',JSON.stringify(c))}catch(e){} return c; }
+  try{ return JSON.parse(localStorage.getItem('atlas')||'null'); }catch(e){ return null; }
+}
+const cfg = readCfg();
+let state = null, online = false, discovered = [];
+
+if (!cfg) { $('#nobox').classList.remove('hide'); }
+else {
+  const base = `atlas/${cfg.d}`;
+  const client = mqtt.connect(`${cfg.ws?'ws':'wss'}://${cfg.h}:${cfg.port}/mqtt`, {username:cfg.u, password:cfg.p, clientId:'app-'+Math.random().toString(16).slice(2,10), reconnectPeriod:2000, connectTimeout:10000});
+  const send = (o) => { if(!client.connected){toast('Pas de connexion internet');return;} o.k=cfg.k; o.cid=Math.random().toString(36).slice(2,8); client.publish(`${base}/cmd`, JSON.stringify(o), {qos:1}); };
+  window.send = send;
+
+  client.on('connect', () => { client.subscribe(`${base}/#`); setConn(); });
+  client.on('close', setConn); client.on('offline', setConn);
+  client.on('message', (topic, msg) => {
+    const t = topic.slice(base.length+1), s = msg.toString();
+    if (t==='online') { online = s==='1'; setConn(); render(); }
+    else if (t==='state') { try{ state = JSON.parse(s); }catch(e){} render(); }
+    else if (t==='event') { try{ onEvent(JSON.parse(s)); }catch(e){} }
+  });
+
+  function setConn(){
+    const ok = client.connected && online;
+    $('#conn').innerHTML = `<span class="dot ${ok?'on':''}"></span>${!client.connected?'Hors connexion':online?'Boîtier en ligne':'Boîtier hors ligne'}`;
+  }
+
+  function render(){
+    if (!state) return;
+    const hasTv = !!state.active;
+    $('#setup').classList.toggle('hide', hasTv); $('#remote').classList.toggle('hide', !hasTv);
+    if (!hasTv) return;
+    const tv = state.tv || {};
+    $('#sPower').textContent = tv.is_on===true?'Allumée':tv.is_on===false?'En veille':'Inconnu';
+    $('#sCh').textContent = state.last_channel ?? '—';
+    $('#sApp').textContent = prettyApp(tv.app);
+    $('#sVol').textContent = tv.volume!=null ? `${tv.volume}${tv.volume_max?' / '+tv.volume_max:''}` : '—';
+    const st = state.settings || {};
+    $('#favCh').textContent = st.fav_channel ?? 1;
+    if (document.activeElement.tagName!=='INPUT'){
+      $('#setFav').value = st.fav_channel ?? 1; $('#setVol').value = st.volume_steps ?? 12;
+      $('#setFavs').value = (st.favorites||[]).map(f=>`${f.n}=${f.name}`).join(', ');
+    }
+    const favs = st.favorites||[];
+    $('#favCard').classList.toggle('hide', !favs.length);
+    $('#favs').innerHTML = favs.map(f=>`<button data-ch="${f.n}">${esc(f.name)}<br><span class="mute">${f.n}</span></button>`).join('');
+    const dev = (state.devices||[]).find(d=>d.id===state.active);
+    $('#info').textContent = dev ? `TV : ${dev.name} (${dev.kind}, ${dev.ip}) · agent ${state.agent}` : '';
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function prettyApp(a){
+    if(!a) return '—';
+    const m = {'com.google.android.apps.tv.launcherx':'Accueil','com.google.android.tvlauncher':'Accueil','com.android.tv.settings':'⚠️ Réglages','com.android.vending':'Play Store','com.netflix.ninja':'Netflix','com.google.android.youtube.tv':'YouTube'};
+    if (m[a]) return m[a];
+    if (/swisscom|bluetv/i.test(a)) return 'blue TV';
+    if (/settings/i.test(a)) return '⚠️ Réglages';
+    return a.split('.').slice(-1)[0];
+  }
+
+  function onEvent(e){
+    if (e.type==='ack' && !e.ok && e.message) toast('⚠️ '+e.message, 3500);
+    if (e.type==='scan'){
+      if (e.step==='start'){ $('#setupMsg').textContent='Recherche sur le réseau… (≈ 10 s)'; $('#found').innerHTML=''; }
+      if (e.step==='done'){ discovered=e.devices||[];
+        $('#setupMsg').textContent = discovered.length ? 'TV trouvée(s). Choisissez la vôtre :' : 'Aucune TV trouvée. Vérifiez qu\'elle est allumée et sur le même réseau, puis réessayez.';
+        $('#found').innerHTML = discovered.map(d=>`<button data-pair="${d.id}"><b>${esc(d.name)}</b><br><span class="mute">${d.kind==='androidtv'?'Android TV / box Swisscom':'Samsung'} · ${d.ip}</span></button>`).join('');
+      }
+    }
+    if (e.type==='pairing'){
+      if (e.step==='accept_on_tv') $('#setupMsg').textContent='Sur la TV, appuyez sur « Autoriser » avec la télécommande.';
+      if (e.step==='starting') $('#setupMsg').textContent='Connexion à la TV…';
+      if (e.step==='code_needed'){ $('#setupMsg').textContent = e.error ? 'Code refusé. Réessayez.' : 'Un code est affiché sur la TV.'; $('#codeBox').classList.remove('hide'); $('#code').focus(); }
+      if (e.step==='done'){ $('#codeBox').classList.add('hide'); toast('✅ TV associée !'); }
+      if (e.step==='error'){ $('#setupMsg').textContent='Échec : '+(e.message||'erreur')+'. Réessayez.'; $('#codeBox').classList.add('hide'); }
+    }
+    if (e.type==='repair'){
+      if (e.step==='start') toast('🔧 Réparation en cours… (≈ 30 s)', 5000);
+      if (e.step==='done') toast('✅ Télé réparée');
+      if (e.step==='error') toast('⚠️ '+e.message, 4000);
+    }
+  }
+
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if(!b) return;
+    if (b.dataset.k){ send({action:'key', key:b.dataset.k}); if(navigator.vibrate) navigator.vibrate(15); }
+    else if (b.dataset.a==='repair') send({action:'repair'});
+    else if (b.dataset.a==='power') send({action:'power', on: b.dataset.on==='1'});
+    else if (b.dataset.ch) { send({action:'channel', number:+b.dataset.ch}); toast('Chaîne '+b.dataset.ch); }
+    else if (b.dataset.pair){ send({action:'pair_start', device:b.dataset.pair}); }
+  });
+  $('#scanBtn').onclick = () => send({action:'scan'});
+  $('#codeBtn').onclick = () => { const c=$('#code').value.trim(); if(c) send({action:'pair_finish', code:c}); };
+  $('#chGo').onclick = () => { const n=parseInt($('#chNum').value); if(n>0){ send({action:'channel', number:n}); $('#chNum').value=''; $('#chNum').blur(); toast('Chaîne '+n);} };
+  $('#saveSet').onclick = () => {
+    const favorites = $('#setFavs').value.split(',').map(x=>x.split('=')).filter(x=>x.length===2 && +x[0]>0).map(([n,name])=>({n:+n.trim(), name:name.trim()}));
+    send({action:'settings', fav_channel:+$('#setFav').value||1, volume_steps:+$('#setVol').value||12, favorites}); toast('Réglages enregistrés');
+  };
+  $('#rescan').onclick = () => { if(confirm('Oublier cette TV et en rechercher une autre ?')) send({action:'forget'}); };
+}
+</script>
+</body>
+</html>
